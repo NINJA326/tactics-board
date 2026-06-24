@@ -1344,3 +1344,71 @@ button{
   .brand{position:relative;}
   .export-controls{grid-template-columns:1fr !important;}
 }
+
+/* v13.5 プレー名をコート上部に表示（再生用・編集なし） */
+.court-play-title-v135{
+  position:absolute;
+  top:18px;
+  left:220px;
+  right:92px;
+  height:58px;
+  z-index:28;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  gap:3px;
+  padding:8px 18px;
+  border-radius:18px;
+  background:
+    linear-gradient(180deg,rgba(20,29,42,.92),rgba(8,15,26,.82));
+  border:1px solid rgba(247,200,95,.22);
+  box-shadow:0 16px 34px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter:blur(14px);
+  pointer-events:none;
+  opacity:0;
+  transform:translateY(-4px);
+  transition:opacity .18s ease, transform .18s ease, border-color .18s ease;
+}
+.court-play-title-v135.active{
+  opacity:1;
+  transform:translateY(0);
+  border-color:rgba(247,200,95,.46);
+}
+.court-play-title-v135 .court-play-title-main{
+  width:100%;
+  text-align:center;
+  font-size:24px;
+  line-height:1.05;
+  font-weight:1000;
+  letter-spacing:-.04em;
+  color:#fff;
+  text-shadow:0 3px 14px rgba(0,0,0,.45);
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.court-play-title-v135 .court-play-title-sub{
+  max-width:100%;
+  text-align:center;
+  font-size:10px;
+  line-height:1;
+  font-weight:1000;
+  letter-spacing:.14em;
+  color:#f7c85f;
+  text-transform:uppercase;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+@media(max-width:1000px){
+  .court-play-title-v135{
+    top:68px;
+    left:16px;
+    right:16px;
+    height:50px;
+    border-radius:16px;
+  }
+  .court-play-title-v135 .court-play-title-main{font-size:19px;}
+  .court-play-title-v135 .court-play-title-sub{font-size:9px;}
+}

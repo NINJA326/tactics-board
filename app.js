@@ -3827,3 +3827,586 @@ setTimeout(()=>{
     setTimeout(()=>render(),80);
   }
 })();
+
+/* v13.4 サムネイル対応：動画の上部にプレー名ヘッダーを入れる
+   - スマホの写真アプリで真っ黒サムネになりにくいよう、録画開始時にタイトル付き1枚目を長めに保持
+   - 通常画面・作成・再生・保存プレー・ライブラリ機能は変更なし
+*/
+let exportVideoCanvasV134 = null;
+let exportVideoCtxV134 = null;
+
+function headerHeightV134(m){
+  return m === 'full' ? 118 : 96;
+}
+
+function ensureVideoExportCanvasV134(m){
+  const court = exportSizeForModeV126 ? exportSizeForModeV126(m) : (m === 'full' ? {w:1400,h:750} : {w:750,h:700});
+  const headerH = headerHeightV134(m);
+  if(!exportVideoCanvasV134) exportVideoCanvasV134 = document.createElement('canvas');
+  exportVideoCanvasV134.width = court.w;
+  exportVideoCanvasV134.height = court.h + headerH;
+  exportVideoCtxV134 = exportVideoCanvasV134.getContext('2d');
+  return exportVideoCanvasV134;
+}
+
+function fitTextV134(ctx, text, maxWidth, startSize, minSize){
+  let size = startSize;
+  while(size > minSize){
+    ctx.font = `900 ${size}px system-ui,-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif`;
+    if(ctx.measureText(text).width <= maxWidth) break;
+    size -= 2;
+  }
+  return size;
+}
+
+function drawVideoHeaderV134(ctx, w, h, title, source, speed){
+  const safeTitle = String(title || 'Tactics Board').trim() || 'Tactics Board';
+  const grad = ctx.createLinearGradient(0,0,w,h);
+  grad.addColorStop(0,'#08111f');
+  grad.addColorStop(.55,'#0f1f35');
+  grad.addColorStop(1,'#16263b');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,w,h);
+
+  // subtle court/app accent line
+  ctx.fillStyle = '#f4b43a';
+  ctx.fillRect(0,h-6,w,6);
+  ctx.globalAlpha = .16;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(w-90, h/2, h*.52, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  const pad = Math.max(24, Math.round(w*.035));
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const titleSize = fitTextV134(ctx, safeTitle, w - pad*2 - 130, h > 105 ? 44 : 34, 20);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `900 ${titleSize}px system-ui,-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif`;
+  ctx.fillText(safeTitle, pad, h*.42);
+
+  ctx.fillStyle = 'rgba(255,255,255,.72)';
+  ctx.font = `800 ${h > 105 ? 17 : 14}px system-ui,-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif`;
+  const meta = `${source || 'PLAY'}  /  ${speed || 1}x  /  NINJA Tactics Board`;
+  ctx.fillText(meta, pad, h*.73);
+
+  // badge
+  const badge = 'PLAY';
+  ctx.font = `900 ${h > 105 ? 18 : 15}px system-ui`;
+  const bw = ctx.measureText(badge).width + 34;
+  const bh = h > 105 ? 38 : 32;
+  const bx = w - pad - bw;
+  const by = Math.round(h*.36 - bh/2);
+  ctx.fillStyle = 'rgba(244,180,58,.95)';
+  roundRectV134(ctx,bx,by,bw,bh,16,true,false);
+  ctx.fillStyle = '#10141c';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(badge,bx+bw/2,by+bh/2+1);
+}
+
+function roundRectV134(ctx,x,y,w,h,r,fill,stroke){
+  const rr = Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+rr,y);
+  ctx.lineTo(x+w-rr,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+rr);
+  ctx.lineTo(x+w,y+h-rr);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-rr,y+h);
+  ctx.lineTo(x+rr,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-rr);
+  ctx.lineTo(x,y+rr);
+  ctx.quadraticCurveTo(x,y,x+rr,y);
+  ctx.closePath();
+  if(fill) ctx.fill();
+  if(stroke) ctx.stroke();
+}
+
+function renderSnapshotToExportVideoCanvasV134(snapshot, drawStepNumbers=true, exportMode, playTitle='', source='', speed=1){
+  const m = exportMode || selectedModeV126?.() || mode;
+  const ex = ensureVideoExportCanvasV134(m);
+  const c = exportVideoCtxV134 || ex.getContext('2d');
+  const headerH = headerHeightV134(m);
+  const court = exportSizeForModeV126 ? exportSizeForModeV126(m) : {w:ex.width,h:ex.height-headerH};
+
+  c.clearRect(0,0,ex.width,ex.height);
+  drawVideoHeaderV134(c, ex.width, headerH, playTitle, source, speed);
+
+  c.save();
+  c.translate(0,headerH);
+  const img = m === 'half' ? halfImg : fullImg;
+  if(img && img.complete && img.naturalWidth) c.drawImage(img,0,0,court.w,court.h);
+  else if(typeof drawCourtVectorV121 === 'function') drawCourtVectorV121(c,court.w,court.h,m);
+  else { c.fillStyle = '#e2aa56'; c.fillRect(0,0,court.w,court.h); }
+
+  const visibleLines = (snapshot.lines || []).filter(l => !l.hidden);
+  visibleLines.forEach((l,i)=>{
+    const line = {...l, alpha: i===visibleLines.length-1 ? 1 : i===visibleLines.length-2 ? .35 : .18};
+    drawLineExportV121(c,line);
+  });
+  const objs = (typeof displayObjectsV130 === 'function') ? displayObjectsV130(snapshot.objects || [], m) : (snapshot.objects || []);
+  objs.forEach(o=>drawObjExportV121(c,o));
+
+  if(drawStepNumbers){
+    visibleLines.forEach((l,i)=>{
+      const mid = lineMid(l);
+      c.save();
+      c.fillStyle='#fff';
+      c.beginPath();
+      c.arc(mid.x,mid.y,12,0,Math.PI*2);
+      c.fill();
+      c.fillStyle='#111';
+      c.font='900 11px system-ui';
+      c.textAlign='center';
+      c.textBaseline='middle';
+      c.fillText(String(getLineNo(l,i+1)),mid.x,mid.y);
+      c.restore();
+    });
+  }
+  c.restore();
+  return ex;
+}
+
+async function recordExportFramesV134(play, speed=1){
+  const frames = clone(play.frames || []);
+  const exportMode = play.mode || 'half';
+  const playTitle = play.title || selectedPlayV125?.title || 'Tactics Board';
+  const source = selectedPlaySourceV126 || selectedPlayV125?.source || '保存プレー';
+  const oldSnap = currentSnapshotV121 ? currentSnapshotV121() : {objects:clone(objects), lines:clone(lines)};
+  const oldMode = mode;
+  const durationBase = (playbackStateV115 && playbackStateV115.durationBase) ? playbackStateV115.durationBase : 850;
+  const duration = durationBase / Math.max(.1, Number(speed)||1);
+  const chunks=[];
+  let stream, recorder, mime;
+  try{
+    renderSnapshotToExportVideoCanvasV134(frames[0], true, exportMode, playTitle, source, speed);
+    const ex = ensureVideoExportCanvasV134(exportMode);
+    if(!ex.captureStream) throw new Error('captureStream unsupported');
+    stream = ex.captureStream(30);
+    mime = bestVideoMimeV121 ? bestVideoMimeV121() : '';
+    try{
+      recorder = mime ? new MediaRecorder(stream,{mimeType:mime, videoBitsPerSecond:5000000}) : new MediaRecorder(stream,{videoBitsPerSecond:5000000});
+    }catch(e){
+      recorder = new MediaRecorder(stream);
+      mime = recorder.mimeType || 'video/webm';
+    }
+    const stopped = new Promise((resolve,reject)=>{
+      recorder.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+      recorder.onerror = e=>reject(e.error || e);
+      recorder.onstop = resolve;
+    });
+    recorder.start(200);
+
+    // サムネイル対策：最初のタイトル付きフレームを長めに録画する
+    await sleepV120(1500);
+
+    for(let i=0;i<frames.length-1;i++){
+      const from=frames[i], to=frames[i+1];
+      const start=performance.now();
+      await new Promise(resolve=>{
+        function step(now){
+          const t=Math.min(1,(now-start)/duration);
+          const snap={objects:interpObjects(from.objects||[],to.objects||[],t), lines:to.lines||[]};
+          renderSnapshotToExportVideoCanvasV134(snap,true,exportMode,playTitle,source,speed);
+          if(t>=1) resolve(); else requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      });
+      await sleepV120(120);
+    }
+    renderSnapshotToExportVideoCanvasV134(frames[frames.length-1], true, exportMode, playTitle, source, speed);
+    await sleepV120(550);
+    recorder.stop();
+    await stopped;
+    if(!chunks.length) throw new Error('recorded chunks empty');
+    return new Blob(chunks,{type:mime || recorder.mimeType || chunks[0].type || 'video/webm'});
+  }finally{
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    objects=oldSnap.objects; lines=oldSnap.lines; mode=oldMode; syncMode?.(); setCanvasSize?.(); render?.();
+  }
+}
+
+// v13.4: 動画保存だけタイトル付きヘッダー版に差し替え
+if(typeof saveVideoV126 === 'function'){
+  saveVideoV126 = async function(){
+    if(exportingVideoV120) return;
+    if(typeof MediaRecorder === 'undefined'){
+      alert('このブラウザは動画保存に対応していません。Safari/Chromeを最新版にしてください。');
+      return;
+    }
+    const play = getSelectedPlayForExportV126();
+    if(!play || !play.frames || play.frames.length < 2){
+      alert('先にプレーを作成して保存し、保存プレーを選択してください。');
+      return;
+    }
+    const base = safeFileNameV126(prompt('保存する動画名を入力してください', play.title || 'tactics-board') || play.title || 'tactics-board');
+    play.title = base || play.title || 'Tactics Board';
+    const btn=$('saveVideoBtnV120'), shareBtn=$('sharePlayBtnV120');
+    try{
+      exportingVideoV120=true;
+      if(btn) btn.disabled=true;
+      if(shareBtn) shareBtn.disabled=true;
+      pausePlaybackV115?.();
+      setExportStatusV120(`動画を作成中です：${base}　上部にプレー名を入れてサムネイル対応しています…`);
+      const blob = await recordExportFramesV134(play, playbackStateV115?.speed || 1);
+      const type = blob.type || 'video/webm';
+      const ext = type.includes('mp4') ? 'mp4' : 'webm';
+      const name = `${base}.${ext}`;
+      lastExportBlobV120=blob;
+      lastExportFileNameV120=name;
+      downloadBlobV120(blob,name);
+      setExportStatusV120(`動画を保存しました：${name}　上部にプレー名入り。iPhoneは共有→「ビデオを保存」で写真アプリへ入れられます。`);
+    }catch(err){
+      console.error(err);
+      alert('動画保存に失敗しました。GitHub Pages上でSafari/Chrome最新版を試してください。');
+      setExportStatusV120('動画保存に失敗しました。画像保存は使えます。ブラウザの動画録画対応が原因の可能性があります。');
+    }finally{
+      exportingVideoV120=false;
+      if(btn) btn.disabled=false;
+      if(shareBtn) shareBtn.disabled=false;
+    }
+  };
+  const vid=$('saveVideoBtnV120');
+  if(vid) vid.onclick = saveVideoV126;
+}
+
+if($('exportStatusV120')){
+  setExportStatusV120('v13.4：動画の上部にプレー名を表示。スマホ保存時のサムネイルで判別しやすくしました。');
+}
+
+/* v13.5 コート上部に選択中プレー名を表示
+   - 名前変更ボタンなどの修正機能は追加しない
+   - 保存プレー/ムーブライブラリを再生・選択した時だけ表示
+*/
+function ensureCourtPlayTitleV135(){
+  let box = document.getElementById('courtPlayTitleV135');
+  if(box) return box;
+  const area = document.getElementById('courtArea');
+  if(!area) return null;
+  box = document.createElement('div');
+  box.id = 'courtPlayTitleV135';
+  box.className = 'court-play-title-v135';
+  box.innerHTML = '<div class="court-play-title-main" id="courtPlayTitleMainV135"></div><div class="court-play-title-sub" id="courtPlayTitleSubV135"></div>';
+  area.appendChild(box);
+  return box;
+}
+function updateCourtPlayTitleV135(){
+  const box = ensureCourtPlayTitleV135();
+  if(!box) return;
+  const main = document.getElementById('courtPlayTitleMainV135');
+  const sub = document.getElementById('courtPlayTitleSubV135');
+  const title = (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.title)
+    || (typeof selectedPlayDataV126 !== 'undefined' && selectedPlayDataV126 && selectedPlayDataV126.title)
+    || '';
+  const source = (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.source)
+    || (typeof selectedPlaySourceV126 !== 'undefined' && selectedPlaySourceV126)
+    || '';
+  if(!title){
+    box.classList.remove('active');
+    if(main) main.textContent = '';
+    if(sub) sub.textContent = '';
+    return;
+  }
+  if(main) main.textContent = title;
+  if(sub) sub.textContent = source ? source : 'PLAY';
+  box.classList.add('active');
+}
+(function installCourtPlayTitleV135(){
+  const wrap = (name)=>{
+    try{
+      const oldFn = window[name] || eval('typeof '+name+' !== "undefined" ? '+name+' : null');
+      if(typeof oldFn !== 'function' || oldFn.__courtTitleWrappedV135) return;
+      const wrapped = function(...args){
+        const result = oldFn.apply(this,args);
+        setTimeout(updateCourtPlayTitleV135,0);
+        setTimeout(updateCourtPlayTitleV135,120);
+        return result;
+      };
+      wrapped.__courtTitleWrappedV135 = true;
+      try{ window[name] = wrapped; }catch(e){}
+      try{ eval(name + ' = wrapped'); }catch(e){}
+    }catch(e){}
+  };
+  wrap('setSelectedPlayV125');
+  wrap('rememberSelectedPlayV126');
+  wrap('playSaved');
+  wrap('loadLibraryPlayV118');
+  wrap('updateSelectedPlayPanelV125');
+  window.addEventListener('load', ()=>setTimeout(updateCourtPlayTitleV135,300));
+  setTimeout(updateCourtPlayTitleV135,500);
+  setTimeout(updateCourtPlayTitleV135,1400);
+})();
+
+/* v13.6 画像保存・共有もサムネイル対応
+   - 画像保存にも動画と同じ上部タイトルヘッダーを付ける
+   - 共有で未保存の場合は、タイトル付き画像を生成して共有
+   - 動画保存はv13.4のタイトル付き録画を維持
+*/
+function getExportTitleInfoV136(){
+  const title = (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.title)
+    || (typeof selectedPlayDataV126 !== 'undefined' && selectedPlayDataV126 && selectedPlayDataV126.title)
+    || (typeof getSelectedPlayForExportV126 === 'function' && getSelectedPlayForExportV126() && getSelectedPlayForExportV126().title)
+    || 'Tactics Board';
+  const source = (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.source)
+    || (typeof selectedPlaySourceV126 !== 'undefined' && selectedPlaySourceV126)
+    || 'PLAY';
+  const m = (typeof selectedModeV126 === 'function' ? selectedModeV126() : mode) || mode || 'half';
+  return {title, source, mode:m};
+}
+
+function renderCurrentTitledImageCanvasV136(){
+  const info = getExportTitleInfoV136();
+  const snap = (typeof currentSnapshotV121 === 'function') ? currentSnapshotV121() : {objects:clone(objects), lines:clone(lines)};
+  if(typeof renderSnapshotToExportVideoCanvasV134 === 'function'){
+    return renderSnapshotToExportVideoCanvasV134(snap, true, info.mode, info.title, info.source, playbackStateV115?.speed || 1);
+  }
+  if(typeof renderSnapshotToExportCanvasV121 === 'function'){
+    return renderSnapshotToExportCanvasV121(snap, true);
+  }
+  return canvas;
+}
+
+function titledImageBlobV136(type='image/png', quality=.95){
+  const ex = renderCurrentTitledImageCanvasV136();
+  return new Promise((resolve,reject)=>{
+    try{
+      ex.toBlob(b=>b?resolve(b):reject(new Error('blob empty')), type, quality);
+    }catch(e){ reject(e); }
+  });
+}
+
+async function saveImageV136(){
+  try{
+    const info = getExportTitleInfoV136();
+    const blob = await titledImageBlobV136('image/png');
+    const base = (typeof safeFileNameV126 === 'function') ? safeFileNameV126(info.title || 'tactics-board') : (info.title || 'tactics-board').replace(/[\\/:*?"<>|]/g,'_');
+    const name = `${base || 'tactics-board'}_thumbnail_${timestampV120()}.png`;
+    lastExportBlobV120 = blob;
+    lastExportFileNameV120 = name;
+    downloadBlobV120(blob,name);
+    setExportStatusV120(`画像を保存しました：${name}　上部にプレー名入りでサムネイルとして判別しやすくしました。`);
+  }catch(err){
+    console.error(err);
+    alert('画像保存に失敗しました。GitHub Pagesにアップしてからもう一度試してください。');
+  }
+}
+
+async function sharePlayV136(){
+  try{
+    if(!lastExportBlobV120){
+      const info = getExportTitleInfoV136();
+      lastExportBlobV120 = await titledImageBlobV136('image/png');
+      const base = (typeof safeFileNameV126 === 'function') ? safeFileNameV126(info.title || 'tactics-board') : (info.title || 'tactics-board').replace(/[\\/:*?"<>|]/g,'_');
+      lastExportFileNameV120 = `${base || 'tactics-board'}_thumbnail_${timestampV120()}.png`;
+    }
+    const file = new File([lastExportBlobV120], lastExportFileNameV120, {type:lastExportBlobV120.type || 'application/octet-stream'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'Tactics Board', text:'作戦ボード'});
+      setExportStatusV120('共有しました。サムネイル画像/タイトル付き動画として判別しやすくしています。');
+    }else if(navigator.share){
+      await navigator.share({title:'Tactics Board', text:'作戦ボード'});
+      setExportStatusV120('共有しました。');
+    }else{
+      downloadBlobV120(lastExportBlobV120,lastExportFileNameV120);
+      setExportStatusV120('直接共有に非対応のため、保存しました。');
+    }
+  }catch(err){
+    console.error(err);
+    if(err && err.name !== 'AbortError') alert('共有に失敗しました。先に画像保存または動画保存を試してください。');
+  }
+}
+
+setTimeout(()=>{
+  const img=$('saveImageBtnV120');
+  const share=$('sharePlayBtnV120');
+  if(img) img.onclick = saveImageV136;
+  if(share) share.onclick = sharePlayV136;
+  if($('exportStatusV120')){
+    setExportStatusV120('v13.6：画像保存・動画保存・共有で、上部にプレー名が入るサムネイル対応を追加しました。');
+  }
+}, 1400);
+
+
+/* v13.7 動画録画エンジン再構築
+   - 0秒/黒画面対策として captureStream(0) + requestFrame を優先
+   - 最初にプレー名付きサムネイル画面を約2秒保持
+   - 録画専用Canvasだけを録画し、コート/選手/線/スマートDF/速度を維持
+*/
+function sleepV137(ms){ return new Promise(resolve=>setTimeout(resolve, ms)); }
+function frameRateV137(){ return 30; }
+function requestVideoFrameV137(track){
+  try{
+    if(track && typeof track.requestFrame === 'function') track.requestFrame();
+  }catch(e){}
+}
+function selectedSpeedV137(){
+  const s = Number(playbackStateV115?.speed || 1);
+  return Math.max(.1, Math.min(1.5, s || 1));
+}
+function videoMimeV137(){
+  if(typeof MediaRecorder === 'undefined') return '';
+  const candidates = [
+    'video/mp4;codecs=h264',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm'
+  ];
+  return candidates.find(t=>{
+    try{return MediaRecorder.isTypeSupported(t)}catch(e){return false}
+  }) || '';
+}
+function selectedPlayTitleV137(play){
+  return (play && play.title) || selectedPlayV125?.title || selectedPlayDataV126?.title || 'Tactics Board';
+}
+function selectedPlaySourceV137(){
+  return selectedPlaySourceV126 || selectedPlayV125?.source || '保存プレー';
+}
+function makeInterpolatedSnapshotV137(from,to,t){
+  return {
+    objects: interpObjects(from.objects || [], to.objects || [], t),
+    lines: to.lines || []
+  };
+}
+async function drawCaptureHoldV137(track, snap, frames, exportMode, playTitle, source, speed, delay){
+  for(let i=0;i<frames;i++){
+    renderSnapshotToExportVideoCanvasV134(snap, true, exportMode, playTitle, source, speed);
+    requestVideoFrameV137(track);
+    await sleepV137(delay);
+  }
+}
+async function recordExportFramesV137(play, speed=1){
+  const frames = clone(play.frames || []);
+  if(frames.length < 2) throw new Error('frames empty');
+
+  const exportMode = play.mode || 'half';
+  const playTitle = selectedPlayTitleV137(play);
+  const source = selectedPlaySourceV137();
+  const fps = frameRateV137();
+  const frameDelay = Math.round(1000 / fps);
+  const durationBase = (playbackStateV115 && playbackStateV115.durationBase) ? playbackStateV115.durationBase : 850;
+  const moveDuration = durationBase / Math.max(.1, Number(speed)||1);
+  const transitionFrames = Math.max(4, Math.round((moveDuration / 1000) * fps));
+
+  const oldSnap = (typeof currentSnapshotV121 === 'function') ? currentSnapshotV121() : {objects:clone(objects), lines:clone(lines)};
+  const oldMode = mode;
+  const chunks = [];
+  let stream = null;
+  let recorder = null;
+  let track = null;
+  let mime = '';
+
+  try{
+    // 先に必ずタイトル+コートを描いてから録画を開始する
+    renderSnapshotToExportVideoCanvasV134(frames[0], true, exportMode, playTitle, source, speed);
+    const ex = ensureVideoExportCanvasV134(exportMode);
+    if(!ex.captureStream) throw new Error('captureStream unsupported');
+
+    // requestFrame対応ブラウザでは0fpsストリームで手動フレーム送出。黒画面/0秒対策。
+    try{
+      stream = ex.captureStream(0);
+    }catch(e){
+      stream = ex.captureStream(fps);
+    }
+    track = stream.getVideoTracks()[0];
+    mime = videoMimeV137();
+    try{
+      recorder = mime
+        ? new MediaRecorder(stream,{mimeType:mime, videoBitsPerSecond:6500000})
+        : new MediaRecorder(stream,{videoBitsPerSecond:6500000});
+    }catch(e){
+      recorder = new MediaRecorder(stream);
+      mime = recorder.mimeType || 'video/webm';
+    }
+
+    const stopped = new Promise((resolve,reject)=>{
+      recorder.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+      recorder.onerror = e=>reject(e.error || e);
+      recorder.onstop = resolve;
+    });
+
+    recorder.start(250);
+
+    // 録画開始直後は数フレーム送ってから本編へ。サムネイル対策としてタイトル画面を約2秒。
+    await drawCaptureHoldV137(track, frames[0], fps*2, exportMode, playTitle, source, speed, frameDelay);
+
+    for(let i=0;i<frames.length-1;i++){
+      const from = frames[i];
+      const to = frames[i+1];
+      for(let f=0; f<=transitionFrames; f++){
+        const t = Math.min(1, f / transitionFrames);
+        const snap = makeInterpolatedSnapshotV137(from,to,t);
+        renderSnapshotToExportVideoCanvasV134(snap, true, exportMode, playTitle, source, speed);
+        requestVideoFrameV137(track);
+        await sleepV137(frameDelay);
+      }
+      // 各ステップ終わりで少し止めて、線と番号を読みやすくする
+      await drawCaptureHoldV137(track, frames[i+1], Math.max(2, Math.round(fps*.12)), exportMode, playTitle, source, speed, frameDelay);
+    }
+
+    await drawCaptureHoldV137(track, frames[frames.length-1], fps, exportMode, playTitle, source, speed, frameDelay);
+    await sleepV137(250);
+    if(recorder.state !== 'inactive') recorder.stop();
+    await stopped;
+
+    if(!chunks.length) throw new Error('recorded chunks empty');
+    const blob = new Blob(chunks,{type:mime || recorder.mimeType || chunks[0].type || 'video/webm'});
+    if(blob.size < 1500) throw new Error('recorded blob too small');
+    return blob;
+  }finally{
+    try{ if(recorder && recorder.state !== 'inactive') recorder.stop(); }catch(e){}
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    objects = oldSnap.objects;
+    lines = oldSnap.lines;
+    mode = oldMode;
+    try{ syncMode?.(); setCanvasSize?.(); render?.(); }catch(e){}
+  }
+}
+
+async function saveVideoV137(){
+  if(exportingVideoV120) return;
+  if(typeof MediaRecorder === 'undefined'){
+    alert('このブラウザは動画保存に対応していません。Safari/Chromeを最新版にしてください。');
+    return;
+  }
+  const play = getSelectedPlayForExportV126();
+  if(!play || !play.frames || play.frames.length < 2){
+    alert('先にプレーを作成して保存し、保存プレーを選択してください。');
+    return;
+  }
+  const defaultName = selectedPlayTitleV137(play);
+  const base = safeFileNameV126(prompt('保存する動画名を入力してください', defaultName) || defaultName || 'tactics-board');
+  play.title = base || defaultName || 'Tactics Board';
+  const btn=$('saveVideoBtnV120'), shareBtn=$('sharePlayBtnV120');
+  try{
+    exportingVideoV120 = true;
+    if(btn) btn.disabled = true;
+    if(shareBtn) shareBtn.disabled = true;
+    pausePlaybackV115?.();
+    setExportStatusV120(`動画を作成中です：${base}　最初にプレー名入りサムネイル画面を録画します…`);
+    const blob = await recordExportFramesV137(play, selectedSpeedV137());
+    const type = blob.type || 'video/webm';
+    const ext = type.includes('mp4') ? 'mp4' : 'webm';
+    const name = `${base || 'tactics-board'}.${ext}`;
+    lastExportBlobV120 = blob;
+    lastExportFileNameV120 = name;
+    downloadBlobV120(blob,name);
+    setExportStatusV120(`動画を保存しました：${name}　最初の画面にプレー名が入るのでサムネイルで判別しやすくなります。`);
+  }catch(err){
+    console.error(err);
+    alert('動画保存に失敗しました。GitHub Pages上でSafari/Chrome最新版を試してください。');
+    setExportStatusV120('動画保存に失敗しました。録画非対応ブラウザの場合は画像保存を使ってください。');
+  }finally{
+    exportingVideoV120 = false;
+    if(btn) btn.disabled = false;
+    if(shareBtn) shareBtn.disabled = false;
+  }
+}
+setTimeout(()=>{
+  const vid = $('saveVideoBtnV120');
+  if(vid) vid.onclick = saveVideoV137;
+  if($('exportStatusV120')){
+    setExportStatusV120('v13.7：動画録画エンジンを再構築。0秒・黒画面対策、プレー名サムネイル画面を最初に録画します。');
+  }
+}, 1500);

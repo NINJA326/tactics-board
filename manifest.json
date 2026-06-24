@@ -1,9 +1,1 @@
-{
-  "name": "Tactics Board Pro v13.3",
-  "short_name": "Tactics Pro",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#08111f",
-  "theme_color": "#0b1220",
-  "icons": []
-}
+{"name":"Tactics Board Pro v13.7","short_name":"Tactics Board","start_url":"./index.html","display":"standalone","background_color":"#06101d","theme_color":"#06101d","icons":[]}
