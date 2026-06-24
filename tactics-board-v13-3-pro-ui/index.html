@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Tactics Board Pro v13.3</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f141a">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="left">
+    <div class="brand">
+      <div class="ball">🏀</div>
+      <div>
+        <h1>Tactics Board Pro</h1>
+        <p>Smart Coach Animation</p>
+      </div>
+    </div>
+
+    <section class="card move-library-card">
+      <h2>ムーブライブラリ</h2><span class="panel-badge">PLAYBOOK</span>
+      <p class="move-library-note">右の保存プレーをここへドラッグ、または☆で登録</p>
+      <div id="moveLibraryDrop" class="move-library-drop">
+        <div id="moveLibraryList" class="move-library-list"></div>
+      </div>
+    </section>
+
+    
+
+    
+  </aside>
+
+  <main class="center">
+    <section class="court-area" id="courtArea">
+      <div class="court-switch-floating">
+        <button id="halfBtn" class="mode active">ハーフ</button>
+        <button id="fullBtn" class="mode">オール</button>
+      </div>
+
+      <button id="defenseFloatBtn" class="defense-float-btn" title="ディフェンス表示">D</button>
+      <button id="resetFloatBtn" class="reset-float-btn" title="ポジションをリセット">↺</button>
+      <canvas id="board"></canvas>
+      <div id="moveChoice" class="choice hidden">
+        <button id="chooseMoveBtn">移動</button>
+        <button id="chooseDriveBtn">ドライブ</button>
+      </div>
+      <div id="ballChoice" class="choice hidden">
+        <button id="choosePassBtn">パス</button>
+        <button id="chooseShootBtn">シュート</button>
+      </div>
+      <div id="numberList" class="number-list hidden"></div>
+    </section>
+  </main>
+
+  <aside class="right">
+    <section class="card original-card">
+      <h2>初期ポジション</h2><span class="panel-badge">SETUP</span>
+      <input id="positionName" class="custom-input" placeholder="名前を入力">
+      <div class="position-actions">
+        <button id="savePositionBtn" class="save-custom">位置保存</button>
+        <button id="resetPositionBtnRight" class="reset-position-btn small">リセット</button>
+      </div>
+
+      <h3 class="saved-title">ハーフコート</h3>
+      <div id="halfPositionList" class="custom-play-list"></div>
+
+      <h3 class="saved-title">オールコート</h3>
+      <div id="fullPositionList" class="custom-play-list"></div>
+    </section>
+
+    <section class="card play-create-card">
+      <h2>プレー作成</h2><span class="panel-badge">CONTROL</span>
+      <div id="selectedPlayPanelV125" class="selected-play-panel no-selection">
+        <div class="selected-play-label">選択中プレー</div>
+        <div id="selectedPlayTitleV125" class="selected-play-title">未選択</div>
+        <div id="selectedPlaySourceV125" class="selected-play-source">保存プレーを選択してください</div>
+      </div>
+      <div class="play-action-row">
+        <button id="startPlayBtn" class="start-play-btn">スタート</button>
+        <button id="finishPlayBtn" class="finish-play-btn">完了 ✅</button>
+      </div>
+
+      <details class="log-details">
+        <summary>ログ</summary>
+        <div id="playLogList" class="play-log-list"></div>
+      </details>
+
+      <h3 class="saved-title">再生操作</h3>
+      <div id="playbackControlsV115" class="playback-controls">
+        <div class="playback-row">
+          <button id="playBackBtnV115" title="戻る"></button>
+          <button id="playPauseBtnV115" title="再生"></button>
+          <button id="playForwardBtnV115" title="進む"></button>
+        </div>
+        <div class="speed-row speed-row-v132">
+          <button data-speed="0.1">0.1</button>
+          <button data-speed="0.25">0.25</button>
+          <button data-speed="0.5">0.5</button>
+          <button data-speed="0.75">0.75</button>
+          <button data-speed="1" class="active">1.0</button>
+          <button data-speed="1.25">1.25</button>
+          <button data-speed="1.5">1.5</button>
+        </div>
+      </div>
+
+      <h3 class="saved-title">保存・共有</h3>
+      <div class="export-controls">
+        <button id="saveImageBtnV120" class="export-btn image">画像保存</button>
+        <button id="saveVideoBtnV120" class="export-btn video">動画保存</button>
+        <button id="sharePlayBtnV120" class="export-btn share">共有</button>
+      </div>
+      <p id="exportStatusV120" class="export-status">画像は現在の画面、動画は選択中の保存プレーを保存します。</p>
+
+      <h3 class="saved-title">保存プレー</h3>
+      <div id="savedPlayList" class="custom-play-list"></div>
+    </section>
+  </aside>
+</div>
+
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+}
+</script>
+
+</body>
+</html>
