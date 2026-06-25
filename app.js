@@ -5621,3 +5621,171 @@ setTimeout(()=>{
     if(typeof setExportStatusV120 === 'function') setExportStatusV120('v15.3：保存を増やさず、NORMAL/SIDE表示でサイドチェンジできます。');
   },1800);
 })();
+
+/* v15.5 LINEネイティブ共有修正
+   - line.meには飛ばさず、必ずOS共有シートを開く方式へ変更
+   - 共有シート内にLINEが表示される場合、LINEアプリへ直接渡せます。
+*/
+(function(){
+  function safeNameV154(){
+    try{
+      if(typeof lastExportFileNameV120 !== 'undefined' && lastExportFileNameV120) return lastExportFileNameV120;
+    }catch(e){}
+    return 'tactics-board_share_' + (typeof timestampV120 === 'function' ? timestampV120() : Date.now()) + '.png';
+  }
+  function shareTextV154(){
+    let title = 'Tactics Board';
+    try{
+      const t = document.getElementById('selectedPlayTitleV125');
+      if(t && t.textContent && !/未選択/.test(t.textContent)) title = t.textContent.trim();
+    }catch(e){}
+    return `${title}\n作戦ボード`;
+  }
+  async function makeImageBlobV154(){
+    if(typeof titledImageBlobV136 === 'function') return await titledImageBlobV136('image/png');
+    if(typeof exportCanvasToBlobV121 === 'function') return await exportCanvasToBlobV121('image/png');
+    if(typeof canvasToBlobV120 === 'function') return await canvasToBlobV120('image/png');
+    throw new Error('画像を作成できませんでした');
+  }
+  async function ensureBlobV154(preferCurrentImage=false){
+    if(!preferCurrentImage){
+      try{ if(typeof lastExportBlobV120 !== 'undefined' && lastExportBlobV120) return lastExportBlobV120; }catch(e){}
+    }
+    const blob = await makeImageBlobV154();
+    try{
+      lastExportBlobV120 = blob;
+      const title = (typeof getExportTitleInfoV136 === 'function' ? getExportTitleInfoV136().title : 'Play') || 'Play';
+      const safe = (typeof safeFileNameV126 === 'function' ? safeFileNameV126(title) : String(title).replace(/[\\/:*?"<>|]/g,'_')) || 'Play';
+      lastExportFileNameV120 = `${safe}_thumbnail_${typeof timestampV120 === 'function' ? timestampV120() : Date.now()}.png`;
+    }catch(e){}
+    return blob;
+  }
+  async function nativeShareBlobV154(blob, filename, message){
+    const file = new File([blob], filename, {type:blob.type || 'application/octet-stream'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'Tactics Board', text:message || shareTextV154()});
+      return true;
+    }
+    if(navigator.share){
+      await navigator.share({title:'Tactics Board', text:message || shareTextV154()});
+      return true;
+    }
+    return false;
+  }
+  async function actionLineV154(){
+    try{
+      const blob = await ensureBlobV154(true);
+      const ok = await nativeShareBlobV154(blob, safeNameV154(), 'LINEで共有する作戦ボード');
+      if(ok){
+        if(typeof setExportStatusV120 === 'function') setExportStatusV120('共有シートを開きました。LINEを選ぶとLINEアプリへ送れます。');
+      }else{
+        if(typeof setExportStatusV120 === 'function') setExportStatusV120('このブラウザではファイル共有に対応していません。画像保存後にLINEへ添付してください。');
+        alert('このブラウザではLINEへ直接共有できません。画像保存または動画保存をしてから、LINEで添付してください。');
+      }
+    }catch(err){
+      console.error(err);
+      if(typeof setExportStatusV120 === 'function') setExportStatusV120('共有シートを開けませんでした。画像保存後にLINEへ添付してください。');
+      alert('共有シートを開けませんでした。画像保存後にLINEへ添付してください。');
+    }
+  }
+  async function actionMailV154(){
+    const subject = encodeURIComponent('Tactics Board');
+    const body = encodeURIComponent(shareTextV154() + '\n\n画像/動画は必要に応じて保存後に添付してください。');
+    location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
+  async function actionFileV154(){
+    const blob = await ensureBlobV154(false);
+    if(typeof downloadBlobV120 === 'function') downloadBlobV120(blob, safeNameV154());
+    if(typeof setExportStatusV120 === 'function') setExportStatusV120('ファイルとして保存しました。');
+  }
+  async function actionPhotoV154(){
+    try{
+      const blob = await ensureBlobV154(true);
+      const ok = await nativeShareBlobV154(blob, safeNameV154(), '写真へ保存する作戦ボード');
+      if(!ok && typeof downloadBlobV120 === 'function') downloadBlobV120(blob, safeNameV154());
+      if(typeof setExportStatusV120 === 'function') setExportStatusV120('写真へ保存する場合は共有シートから「画像を保存」または「ビデオを保存」を選択してください。');
+    }catch(err){ console.error(err); alert('写真用データの作成に失敗しました。'); }
+  }
+  async function actionCopyV154(){
+    try{
+      const text = shareTextV154();
+      const blob = await ensureBlobV154(true);
+      if(navigator.clipboard && window.ClipboardItem && blob.type && blob.type.startsWith('image/')){
+        await navigator.clipboard.write([new ClipboardItem({[blob.type]: blob})]);
+        if(typeof setExportStatusV120 === 'function') setExportStatusV120('画像をコピーしました。LINEやメールに貼り付けできます。');
+      }else if(navigator.clipboard){
+        await navigator.clipboard.writeText(text);
+        if(typeof setExportStatusV120 === 'function') setExportStatusV120('共有テキストをコピーしました。');
+      }else{
+        alert('このブラウザはコピーに対応していません。');
+      }
+    }catch(err){
+      console.error(err);
+      alert('コピーに失敗しました。');
+    }
+  }
+  function closeMenuV154(){
+    const m=document.getElementById('shareMenuV154');
+    if(m) m.classList.remove('open');
+  }
+  function openMenuV154(){
+    const m=document.getElementById('shareMenuV154');
+    if(m) m.classList.add('open');
+  }
+  function makeOption(cls, strong, sub, fn){
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='share-option-v154 ' + cls;
+    b.innerHTML=`<strong>${strong}</strong><span>${sub}</span>`;
+    b.onclick=async()=>{ closeMenuV154(); await fn(); };
+    return b;
+  }
+  function installMenuV154(){
+    if(document.getElementById('shareMenuV154')) return;
+    const back=document.createElement('div');
+    back.id='shareMenuV154';
+    back.className='share-menu-backdrop-v154';
+    back.innerHTML=`
+      <div class="share-menu-panel-v154" role="dialog" aria-modal="true">
+        <div class="share-menu-head-v154">
+          <div class="share-menu-title-v154">共有する</div>
+          <button type="button" class="share-menu-close-v154" aria-label="閉じる">×</button>
+        </div>
+        <div class="share-menu-grid-v154"></div>
+        <p class="share-menu-note-v154">LINEはline.meではなく端末の共有シートを開きます。LINEが出ない場合は共有シート下部の「機能拡張を編集…」からLINEをONにしてください。</p>
+      </div>`;
+    document.body.appendChild(back);
+    const grid=back.querySelector('.share-menu-grid-v154');
+    grid.appendChild(makeOption('line','📱 LINE','共有シートからLINEを選択',actionLineV154));
+    grid.appendChild(makeOption('mail','📧 メール','メール作成',actionMailV154));
+    grid.appendChild(makeOption('file','📂 ファイル','端末へ保存',actionFileV154));
+    grid.appendChild(makeOption('photo','📸 写真','写真アプリへ保存',actionPhotoV154));
+    grid.appendChild(makeOption('copy','🔗 コピー','画像/テキストをコピー',actionCopyV154));
+    back.querySelector('.share-menu-close-v154').onclick=closeMenuV154;
+    back.addEventListener('click',e=>{ if(e.target===back) closeMenuV154(); });
+  }
+  function installLineButtonV154(){
+    const controls=document.querySelector('.export-controls');
+    if(!controls || document.getElementById('lineShareBtnV154')) return;
+    const b=document.createElement('button');
+    b.id='lineShareBtnV154';
+    b.type='button';
+    b.className='export-btn line-v154';
+    b.textContent='LINE';
+    b.title='共有シートからLINEへ送る';
+    b.onclick=actionLineV154;
+    controls.appendChild(b);
+  }
+  function wireV154(){
+    installMenuV154();
+    installLineButtonV154();
+    const share=document.getElementById('sharePlayBtnV120');
+    if(share){
+      share.textContent='共有';
+      share.onclick=(e)=>{ e.preventDefault(); openMenuV154(); };
+    }
+    if(typeof setExportStatusV120 === 'function') setExportStatusV120('v15.5：LINEはline.meに飛ばさず、端末の共有シートからLINEアプリへ送る方式に修正しました。');
+  }
+  setTimeout(wireV154, 2200);
+  window.TacticsShareV154 = {openMenu:openMenuV154, line:actionLineV154};
+})();

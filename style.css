@@ -1890,3 +1890,96 @@ button{
 .selected-play-source{
   color:#9fb0c7 !important;
 }
+
+/* v15.4 共有メニュー / LINEボタン */
+.export-controls{
+  grid-template-columns:repeat(4,1fr) !important;
+}
+.export-btn.line-v154{
+  background:linear-gradient(180deg,#06c755,#04a843) !important;
+  color:#fff !important;
+  border-color:rgba(6,199,85,.85) !important;
+}
+.share-menu-backdrop-v154{
+  position:fixed;
+  inset:0;
+  z-index:99999;
+  background:rgba(0,0,0,.58);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  backdrop-filter:blur(8px);
+}
+.share-menu-backdrop-v154.open{display:flex;}
+.share-menu-panel-v154{
+  width:min(420px, calc(100vw - 32px));
+  background:linear-gradient(180deg,#172232,#07111e);
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:22px;
+  box-shadow:0 28px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08);
+  padding:16px;
+  color:#fff;
+}
+.share-menu-head-v154{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+.share-menu-title-v154{
+  font-size:20px;
+  font-weight:1000;
+  letter-spacing:.02em;
+}
+.share-menu-close-v154{
+  width:38px;
+  height:38px;
+  padding:0 !important;
+  border-radius:999px !important;
+  display:grid;
+  place-items:center;
+  background:#101826 !important;
+}
+.share-menu-grid-v154{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.share-option-v154{
+  min-height:70px;
+  border-radius:16px !important;
+  padding:10px !important;
+  background:linear-gradient(180deg,#101b2b,#0a1320) !important;
+  border-color:rgba(255,255,255,.13) !important;
+  text-align:left;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:5px;
+}
+.share-option-v154 strong{
+  font-size:16px;
+  line-height:1.1;
+}
+.share-option-v154 span{
+  font-size:10px;
+  color:#b8c6da;
+  line-height:1.25;
+}
+.share-option-v154.line strong{color:#48f284;}
+.share-option-v154.mail strong{color:#7db7ff;}
+.share-option-v154.file strong{color:#ffd15b;}
+.share-option-v154.photo strong{color:#ff86d1;}
+.share-option-v154.copy strong{color:#b9f6ff;}
+.share-menu-note-v154{
+  margin:12px 2px 0;
+  font-size:11px;
+  line-height:1.55;
+  color:#b8c6da;
+}
+@media(max-width:560px){
+  .share-menu-grid-v154{grid-template-columns:1fr;}
+  .export-controls{grid-template-columns:1fr 1fr !important;}
+}
