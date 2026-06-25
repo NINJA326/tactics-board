@@ -2701,7 +2701,7 @@ function updateSelectedPlayPanelV125(){
 
   panel.classList.remove("no-selection");
   title.textContent = selectedPlayV125.title;
-  source.textContent = selectedPlayV125.source + " / 動画保存の対象";
+  source.textContent = selectedPlayV125.source;
 }
 
 function isSelectedPlayV125(play){
@@ -4096,12 +4096,29 @@ function updateCourtPlayTitleV135(){
   if(!box) return;
   const main = document.getElementById('courtPlayTitleMainV135');
   const sub = document.getElementById('courtPlayTitleSubV135');
-  const title = (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.title)
-    || (typeof selectedPlayDataV126 !== 'undefined' && selectedPlayDataV126 && selectedPlayDataV126.title)
-    || '';
-  const source = (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.source)
-    || (typeof selectedPlaySourceV126 !== 'undefined' && selectedPlaySourceV126)
-    || '';
+
+  let title = '';
+  let source = '';
+
+  if(typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.title){
+    title = selectedPlayV125.title;
+    source = selectedPlayV125.source || '';
+  }
+  if(!title && typeof selectedPlayDataV126 !== 'undefined' && selectedPlayDataV126 && selectedPlayDataV126.title){
+    title = selectedPlayDataV126.title;
+    source = (typeof selectedPlaySourceV126 !== 'undefined' && selectedPlaySourceV126) || source;
+  }
+  if(!title && typeof getSelectedPlayForExportV126 === 'function'){
+    try{
+      const p = getSelectedPlayForExportV126();
+      if(p && p.title){ title = p.title; source = source || 'PLAY'; }
+    }catch(e){}
+  }
+  if(!title && typeof playbackStateV115 !== 'undefined' && playbackStateV115 && playbackStateV115.frames && playbackStateV115.frames.length){
+    title = 'Play';
+  }
+
+  title = String(title || '').trim();
   if(!title){
     box.classList.remove('active');
     if(main) main.textContent = '';
@@ -4109,7 +4126,7 @@ function updateCourtPlayTitleV135(){
     return;
   }
   if(main) main.textContent = title;
-  if(sub) sub.textContent = source ? source : 'PLAY';
+  if(sub) sub.textContent = source || '';
   box.classList.add('active');
 }
 (function installCourtPlayTitleV135(){
@@ -4410,3 +4427,1197 @@ setTimeout(()=>{
     setExportStatusV120('v13.7：動画録画エンジンを再構築。0秒・黒画面対策、プレー名サムネイル画面を最初に録画します。');
   }
 }, 1500);
+
+
+/* v14.0 下部表示用：再生中もプレー名を確実に更新 */
+(function installBottomTitleRefreshV140(){
+  const refresh = ()=>{ try{ updateCourtPlayTitleV135(); }catch(e){} };
+  ['playPauseBtnV115','playBackBtnV115','playForwardBtnV115'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && !el.__titleRefreshV140){
+      el.__titleRefreshV140=true;
+      el.addEventListener('click',()=>{ setTimeout(refresh,0); setTimeout(refresh,120); }, true);
+    }
+  });
+  document.addEventListener('click',()=>setTimeout(refresh,0), true);
+  setTimeout(refresh,200);
+})();
+
+/* v14.4 スペースゾーン削除ボタン追加
+   - 他機能は変更せず、スペースゾーンに×ボタンを追加
+   - ×タップでそのスペースゾーンと関連するスペース移動記録を削除
+   - ドラッグ移動、右下ハンドル伸縮、白丸番号管理は維持
+*/
+let spaceZonesV141 = Array.isArray(window.spaceZonesV141) ? window.spaceZonesV141 : [];
+let spaceMovesV141 = Array.isArray(window.spaceMovesV141) ? window.spaceMovesV141 : [];
+window.spaceZonesV141 = spaceZonesV141;
+window.spaceMovesV141 = spaceMovesV141;
+let spaceAddModeV141 = false;
+let selectedSpaceIdV141 = null;
+let draggingSpaceV141 = null;
+let spaceNumberTargetV141 = null;
+
+function cloneV141(x){ return JSON.parse(JSON.stringify(x || [])); }
+function newSpaceIdV141(){ return 'space_' + Date.now() + '_' + Math.random().toString(36).slice(2); }
+function courtBoundsV141(){ const s = courtSize(); return {w:s.w,h:s.h}; }
+function clampV141(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function sanitizeSpaceV141(sp){
+  const b=courtBoundsV141();
+  sp.rx = clampV141(Number(sp.rx)||92, 34, Math.max(34,b.w/2));
+  sp.ry = clampV141(Number(sp.ry)||62, 28, Math.max(28,b.h/2));
+  sp.x = clampV141(Number(sp.x)||b.w/2, sp.rx, b.w-sp.rx);
+  sp.y = clampV141(Number(sp.y)||b.h/2, sp.ry, b.h-sp.ry);
+  if(!sp.id) sp.id = newSpaceIdV141();
+  return sp;
+}
+function getMaxStepV141(){
+  let max = 0;
+  try{ (lines||[]).forEach((l,i)=>{ if(!l.hidden) max = Math.max(max, getLineNo(l,i+1)||0); }); }catch(e){}
+  try{ (spaceMovesV141||[]).forEach(m=>{ max = Math.max(max, Number(m.fixedStepNo || m.stepNo || 0)); }); }catch(e){}
+  return max;
+}
+function getSpaceMoveNoV141(m,i=1){ return Number(m.fixedStepNo || m.stepNo || i); }
+function setSpaceMoveNoV141(m,no){ m.fixedStepNo=Number(no); m.stepNo=Number(no); }
+function addSpaceAtV141(p){
+  const sp = sanitizeSpaceV141({id:newSpaceIdV141(), x:p.x, y:p.y, rx:90, ry:62});
+  spaceZonesV141.push(sp);
+  selectedSpaceIdV141 = sp.id;
+  initialSnapshot = snapShot();
+  render();
+}
+function spaceHandlePointV141(sp){ return {x:sp.x + sp.rx * .72, y:sp.y + sp.ry * .72}; }
+function spaceDeletePointV144(sp){ return {x:sp.x + sp.rx * .72, y:sp.y - sp.ry * .72}; }
+function hitSpaceDeleteV144(p){
+  for(let i=spaceZonesV141.length-1;i>=0;i--){
+    const sp=spaceZonesV141[i];
+    const d=spaceDeletePointV144(sp);
+    if(Math.hypot(p.x-d.x,p.y-d.y)<=20) return sp;
+  }
+  return null;
+}
+function deleteSpaceZoneV144(sp){
+  if(!sp) return;
+  spaceZonesV141 = spaceZonesV141.filter(z=>z.id!==sp.id);
+  spaceMovesV141 = spaceMovesV141.filter(m=>m.spaceId!==sp.id);
+  window.spaceZonesV141 = spaceZonesV141;
+  window.spaceMovesV141 = spaceMovesV141;
+  if(selectedSpaceIdV141===sp.id) selectedSpaceIdV141=null;
+  initialSnapshot = snapShot();
+  render();
+}
+function pointInSpaceV141(p,sp){
+  const dx=(p.x-sp.x)/(sp.rx||1), dy=(p.y-sp.y)/(sp.ry||1);
+  return dx*dx + dy*dy <= 1;
+}
+function hitSpaceHandleV141(p){
+  for(let i=spaceZonesV141.length-1;i>=0;i--){
+    const sp=spaceZonesV141[i];
+    const h=spaceHandlePointV141(sp);
+    if(Math.hypot(p.x-h.x,p.y-h.y)<=18) return sp;
+  }
+  return null;
+}
+function hitSpaceV141(p){
+  for(let i=spaceZonesV141.length-1;i>=0;i--){
+    const sp=spaceZonesV141[i];
+    if(pointInSpaceV141(p,sp)) return sp;
+  }
+  return null;
+}
+function spaceMoveBadgePointV141(m){
+  const to = m.to || m;
+  return {x:to.x, y:to.y};
+}
+function hitSpaceMoveBadgeV141(p){
+  for(let i=spaceMovesV141.length-1;i>=0;i--){
+    const m=spaceMovesV141[i];
+    const b=spaceMoveBadgePointV141(m);
+    if(Math.hypot(p.x-b.x,p.y-b.y)<=24) return m;
+  }
+  return null;
+}
+function drawSpaceZoneOnCtxV141(c, sp, selected=false){
+  sp = sanitizeSpaceV141(sp);
+  c.save();
+  c.beginPath();
+  c.ellipse(sp.x, sp.y, sp.rx, sp.ry, 0, 0, Math.PI*2);
+  c.fillStyle='rgba(37,99,235,.12)';
+  c.fill();
+  c.strokeStyle=selected ? '#f4b43a' : '#1764ff';
+  c.lineWidth=selected ? 5 : 4;
+  c.stroke();
+  c.clip();
+  c.strokeStyle='rgba(23,100,255,.82)';
+  c.lineWidth=5;
+  c.lineCap='round';
+  const left=sp.x-sp.rx, right=sp.x+sp.rx, top=sp.y-sp.ry, bottom=sp.y+sp.ry;
+  for(let x=left-80; x<right+80; x+=34){
+    c.beginPath();
+    c.moveTo(x,bottom+24);
+    c.lineTo(x+110,top-24);
+    c.stroke();
+  }
+  c.restore();
+  c.save();
+  const h=spaceHandlePointV141(sp);
+  c.fillStyle=selected ? '#f4b43a' : '#1764ff';
+  c.strokeStyle='#fff';
+  c.lineWidth=2;
+  c.beginPath(); c.arc(h.x,h.y,8,0,Math.PI*2); c.fill(); c.stroke();
+  c.restore();
+  c.save();
+  const d=spaceDeletePointV144(sp);
+  c.fillStyle='rgba(58,28,36,.94)';
+  c.strokeStyle=selected ? '#f4b43a' : 'rgba(255,255,255,.9)';
+  c.lineWidth=2;
+  c.beginPath(); c.arc(d.x,d.y,11,0,Math.PI*2); c.fill(); c.stroke();
+  c.strokeStyle='#ffb3bd';
+  c.lineWidth=3;
+  c.lineCap='round';
+  c.beginPath(); c.moveTo(d.x-4,d.y-4); c.lineTo(d.x+4,d.y+4); c.moveTo(d.x+4,d.y-4); c.lineTo(d.x-4,d.y+4); c.stroke();
+  c.restore();
+}
+function drawSpaceMoveBadgesV141(c, moves, drawNumbers=true){
+  if(!drawNumbers) return;
+  (moves||[]).forEach((m,i)=>{
+    const p=spaceMoveBadgePointV141(m);
+    c.save();
+    c.fillStyle='#fff';
+    c.beginPath(); c.arc(p.x,p.y,12,0,Math.PI*2); c.fill();
+    c.strokeStyle='#1764ff'; c.lineWidth=2; c.stroke();
+    c.fillStyle='#111'; c.font='bold 11px system-ui'; c.textAlign='center'; c.textBaseline='middle';
+    c.fillText(String(getSpaceMoveNoV141(m,i+1)),p.x,p.y);
+    c.restore();
+  });
+}
+function drawSpacesLiveV141(){
+  (spaceZonesV141||[]).forEach(sp=>drawSpaceZoneOnCtxV141(ctx, sp, sp.id===selectedSpaceIdV141));
+}
+function showSpaceNumberListV141(move, clientX, clientY){
+  spaceNumberTargetV141 = move;
+  const box = $('numberList');
+  if(!box) return;
+  const maxNo = Math.max(10, getMaxStepV141());
+  box.innerHTML = '';
+  for(let i=1;i<=maxNo;i++){
+    const b=document.createElement('button');
+    b.type='button'; b.textContent=String(i);
+    if(getSpaceMoveNoV141(move)===i) b.classList.add('active');
+    b.onclick=e=>{ e.preventDefault(); e.stopPropagation(); setSpaceMoveNoV141(move,i); box.classList.add('hidden'); spaceNumberTargetV141=null; render(); };
+    box.appendChild(b);
+  }
+  const plus=document.createElement('button');
+  plus.type='button'; plus.textContent=`＋${maxNo+1}`;
+  plus.onclick=e=>{ e.preventDefault(); e.stopPropagation(); setSpaceMoveNoV141(move,maxNo+1); box.classList.add('hidden'); spaceNumberTargetV141=null; render(); };
+  box.appendChild(plus);
+  const del=document.createElement('button');
+  del.type='button'; del.textContent='× 削除'; del.className='delete-line-btn';
+  del.onclick=e=>{ e.preventDefault(); e.stopPropagation(); spaceMovesV141 = spaceMovesV141.filter(m=>m!==move); window.spaceMovesV141=spaceMovesV141; box.classList.add('hidden'); render(); };
+  box.appendChild(del);
+  const area=$('courtArea').getBoundingClientRect();
+  box.style.left=Math.max(8,Math.min(area.width-96,clientX-area.left+10))+'px';
+  box.style.top=Math.max(8,Math.min(area.height-310,clientY-area.top+10))+'px';
+  box.classList.remove('hidden');
+  render();
+}
+
+function installSpaceButtonV141(){
+  const area=$('courtArea');
+  if(!area || $('spaceZoneBtnV141')) return;
+  const btn=document.createElement('button');
+  btn.id='spaceZoneBtnV141';
+  btn.className='space-zone-tool-v141';
+  btn.type='button';
+  btn.title='スペースゾーン追加';
+  btn.textContent='🔵';
+  btn.onclick=e=>{
+    e.preventDefault(); e.stopPropagation();
+    spaceAddModeV141 = !spaceAddModeV141;
+    btn.classList.toggle('active', spaceAddModeV141);
+  };
+  area.appendChild(btn);
+}
+
+const snapShotBeforeV141 = snapShot;
+snapShot = function(){
+  const s = snapShotBeforeV141 ? snapShotBeforeV141() : {objects:clone(objects), lines:clone(lines)};
+  s.spaces = cloneV141(spaceZonesV141);
+  s.spaceMoves = cloneV141(spaceMovesV141);
+  return s;
+};
+
+const loadSnapBeforeV141 = typeof loadSnap === 'function' ? loadSnap : null;
+loadSnap = function(s){
+  if(loadSnapBeforeV141) loadSnapBeforeV141(s);
+  spaceZonesV141 = cloneV141(s && s.spaces);
+  spaceMovesV141 = cloneV141(s && s.spaceMoves);
+  window.spaceZonesV141 = spaceZonesV141;
+  window.spaceMovesV141 = spaceMovesV141;
+  render();
+};
+
+const buildFramesBeforeV141 = buildFrames;
+buildFrames = function(){
+  ensureLineMeta();
+  const grouped={};
+  (lines||[]).forEach((l,i)=>{
+    const no=getLineNo(l,i+1);
+    if(!grouped[no]) grouped[no]={no,moves:[],lines:[],spaceMoves:[]};
+    if(!l.hidden) grouped[no].lines.push({...l,stepNo:no,fixedStepNo:no});
+    if(l.moveRef) grouped[no].moves.push({...l.moveRef});
+  });
+  (spaceMovesV141||[]).forEach((m,i)=>{
+    const no=getSpaceMoveNoV141(m,i+1);
+    if(!grouped[no]) grouped[no]={no,moves:[],lines:[],spaceMoves:[]};
+    grouped[no].spaceMoves.push({...m,stepNo:no,fixedStepNo:no});
+  });
+  const sorted=Object.values(grouped).sort((a,b)=>a.no-b.no);
+  let base=clone(initialSnapshot || snapShot());
+  base.spaces = cloneV141(base.spaces || spaceZonesV141);
+  base.spaceMoves = cloneV141(base.spaceMoves || []);
+  const built=[clone(base)];
+  sorted.forEach(step=>{
+    const next=clone(base);
+    step.moves.forEach(m=>{
+      const obj=(next.objects||[]).find(o=>o.id===m.id && o.t===m.t);
+      if(obj){ obj.x=m.x; obj.y=m.y; }
+    });
+    step.spaceMoves.forEach(sm=>{
+      const sp=(next.spaces||[]).find(z=>z.id===sm.spaceId);
+      if(sp && sm.to){ sp.x=sm.to.x; sp.y=sm.to.y; sp.rx=sm.to.rx; sp.ry=sm.to.ry; }
+    });
+    next.lines=[...(next.lines||[]),...step.lines];
+    next.spaceMoves=[...(next.spaceMoves||[]),...step.spaceMoves];
+    built.push(clone(next));
+    base=next;
+  });
+  return built;
+};
+
+function interpolateSpacesV141(fromSpaces,toSpaces,t){
+  const e = typeof ease === 'function' ? ease(t) : t;
+  return (fromSpaces||[]).map(sp=>{
+    const target=(toSpaces||[]).find(x=>x.id===sp.id) || sp;
+    return {...sp,
+      x:sp.x+(target.x-sp.x)*e,
+      y:sp.y+(target.y-sp.y)*e,
+      rx:sp.rx+(target.rx-sp.rx)*e,
+      ry:sp.ry+(target.ry-sp.ry)*e
+    };
+  });
+}
+
+const renderBeforeV141 = render;
+render = function(){
+  drawCourt();
+  ensureLineMeta();
+  const visibleLines = (lines || []).filter(l => !l.hidden);
+  visibleLines.forEach((l,i)=>{ l.alpha = i===visibleLines.length-1 ? 1 : i===visibleLines.length-2 ? .35 : .18; drawLine(l); });
+  drawSpacesLiveV141();
+  displayObjectsV130(objects, mode).forEach(drawObj);
+  visibleLines.forEach((l,i)=>{
+    const m=lineMid(l); ctx.save(); ctx.globalAlpha=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(m.x,m.y,11,0,Math.PI*2); ctx.fill();
+    if(inlineTargetLine && inlineTargetLine.__id===l.__id){ ctx.strokeStyle='#f4b43a'; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(m.x,m.y,16,0,Math.PI*2); ctx.stroke(); }
+    ctx.fillStyle='#111'; ctx.font='bold 11px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(getLineNo(l,i+1)),m.x,m.y); ctx.restore();
+  });
+  drawSpaceMoveBadgesV141(ctx, spaceMovesV141, true);
+};
+
+const loadPlaybackFrameBeforeV141 = loadPlaybackFrameV115;
+loadPlaybackFrameV115 = function(frame){
+  objects = clone((frame.objects || []).filter(o => o && o.t !== 'd'));
+  lines = clone(frame.lines || []);
+  spaceZonesV141 = cloneV141(frame.spaces);
+  spaceMovesV141 = cloneV141(frame.spaceMoves);
+  window.spaceZonesV141 = spaceZonesV141;
+  window.spaceMovesV141 = spaceMovesV141;
+  render();
+};
+
+const animatePlaybackBeforeV141 = animatePlaybackV115;
+animatePlaybackV115 = function(){
+  const st = playbackStateV115;
+  if(!st.playing || !st.frames.length) return;
+  const from = st.frames[st.idx];
+  const to = st.frames[st.idx + 1];
+  if(!from || !to){ pausePlaybackV115(); return; }
+  const duration = st.durationBase / Math.max(0.1, st.speed);
+  st.start = performance.now();
+  function step(now){
+    if(!st.playing) return;
+    const t = Math.min(1, (now - st.start) / duration);
+    objects = interpObjects(from.objects || [], to.objects || [], t);
+    lines = to.lines || [];
+    spaceZonesV141 = interpolateSpacesV141(from.spaces||[], to.spaces||[], t);
+    spaceMovesV141 = cloneV141(to.spaceMoves || []);
+    window.spaceZonesV141 = spaceZonesV141; window.spaceMovesV141 = spaceMovesV141;
+    render();
+    if(t >= 1){
+      st.idx++;
+      if(st.idx >= st.frames.length - 1){ loadPlaybackFrameV115(st.frames[st.frames.length - 1]); pausePlaybackV115(); return; }
+      animatePlaybackV115(); return;
+    }
+    st.raf = requestAnimationFrame(step);
+  }
+  st.raf = requestAnimationFrame(step);
+};
+
+const pointerDownBeforeV141 = pointerDown;
+const pointerMoveBeforeV141 = pointerMove;
+const pointerUpBeforeV141 = pointerUp;
+pointerDown = function(e){
+  if(savedPlayback) return;
+  const p=pnt(e);
+  const obj=hitObj(p);
+  if(obj){ return pointerDownBeforeV141(e); }
+  const badge=hitSpaceMoveBadgeV141(p);
+  if(badge){ e.preventDefault(); e.stopPropagation(); hideChoices(); showSpaceNumberListV141(badge,e.clientX,e.clientY); return; }
+  if(spaceAddModeV141){
+    e.preventDefault(); e.stopPropagation();
+    addSpaceAtV141(p);
+    spaceAddModeV141=false;
+    const btn=$('spaceZoneBtnV141'); if(btn) btn.classList.remove('active');
+    return;
+  }
+  const delSpace=hitSpaceDeleteV144(p);
+  if(delSpace){
+    e.preventDefault(); e.stopPropagation(); hideChoices(); hideNumberList?.();
+    deleteSpaceZoneV144(delSpace);
+    return;
+  }
+  const handle=hitSpaceHandleV141(p);
+  if(handle){
+    e.preventDefault(); e.stopPropagation(); hideChoices(); hideNumberList?.();
+    selectedSpaceIdV141=handle.id;
+    draggingSpaceV141={sp:handle,mode:'resize',start:{x:handle.x,y:handle.y,rx:handle.rx,ry:handle.ry},px:p.x,py:p.y};
+    render(); return;
+  }
+  const sp=hitSpaceV141(p);
+  if(sp){
+    e.preventDefault(); e.stopPropagation(); hideChoices(); hideNumberList?.();
+    selectedSpaceIdV141=sp.id;
+    draggingSpaceV141={sp,mode:'move',start:{x:sp.x,y:sp.y,rx:sp.rx,ry:sp.ry},dx:p.x-sp.x,dy:p.y-sp.y};
+    render(); return;
+  }
+  selectedSpaceIdV141=null;
+  return pointerDownBeforeV141(e);
+};
+pointerMove = function(e){
+  if(draggingSpaceV141){
+    e.preventDefault();
+    const p=pnt(e);
+    const sp=draggingSpaceV141.sp;
+    const b=courtBoundsV141();
+    if(draggingSpaceV141.mode==='move'){
+      sp.x = clampV141(snap(p.x-draggingSpaceV141.dx), sp.rx, b.w-sp.rx);
+      sp.y = clampV141(snap(p.y-draggingSpaceV141.dy), sp.ry, b.h-sp.ry);
+    }else{
+      sp.rx = clampV141(snap(Math.abs(p.x-sp.x)), 34, Math.max(34, Math.min(sp.x, b.w-sp.x)));
+      sp.ry = clampV141(snap(Math.abs(p.y-sp.y)), 28, Math.max(28, Math.min(sp.y, b.h-sp.y)));
+    }
+    render(); return;
+  }
+  return pointerMoveBeforeV141(e);
+};
+pointerUp = function(e){
+  if(draggingSpaceV141){
+    const d=draggingSpaceV141;
+    draggingSpaceV141=null;
+    const sp=d.sp;
+    const changed=Math.hypot((sp.x-d.start.x),(sp.y-d.start.y))>4 || Math.abs(sp.rx-d.start.rx)>4 || Math.abs(sp.ry-d.start.ry)>4;
+    if(changed){
+      if(isRecording){
+        const no=getMaxStepV141()+1;
+        spaceMovesV141.push({id:'spaceMove_'+Date.now()+'_'+Math.random().toString(36).slice(2), spaceId:sp.id, from:d.start, to:{x:sp.x,y:sp.y,rx:sp.rx,ry:sp.ry}, stepNo:no, fixedStepNo:no});
+        window.spaceMovesV141=spaceMovesV141;
+        addLog?.('スペースを調整');
+      }else{
+        initialSnapshot = snapShot();
+      }
+    }
+    render(); return;
+  }
+  return pointerUpBeforeV141(e);
+};
+
+function rewireCanvasV141(){
+  canvas.removeEventListener('pointerdown', pointerDownBeforeV141);
+  canvas.removeEventListener('pointermove', pointerMoveBeforeV141);
+  canvas.removeEventListener('pointerup', pointerUpBeforeV141);
+  canvas.removeEventListener('pointerleave', pointerUpBeforeV141);
+  canvas.addEventListener('pointerdown', pointerDown);
+  canvas.addEventListener('pointermove', pointerMove);
+  canvas.addEventListener('pointerup', pointerUp);
+  canvas.addEventListener('pointerleave', pointerUp);
+}
+
+function drawSpacesExportV141(c, snapshot, drawNumbers=true){
+  (snapshot.spaces||[]).forEach(sp=>drawSpaceZoneOnCtxV141(c, {...sp}, false));
+  drawSpaceMoveBadgesV141(c, snapshot.spaceMoves||[], drawNumbers);
+}
+
+if(typeof renderSnapshotToExportCanvasV126 === 'function'){
+  const renderSnapshotToExportCanvasBeforeV141 = renderSnapshotToExportCanvasV126;
+  renderSnapshotToExportCanvasV126 = function(snapshot, drawStepNumbers=true, exportMode){
+    const m = exportMode || selectedModeV126?.() || mode;
+    const ex = ensureExportCanvasForModeV126(m);
+    const c = ex.getContext('2d');
+    c.clearRect(0,0,ex.width,ex.height);
+    const img = m === 'half' ? halfImg : fullImg;
+    if(img.complete && img.naturalWidth) c.drawImage(img,0,0,ex.width,ex.height);
+    else { c.fillStyle = '#e2aa56'; c.fillRect(0,0,ex.width,ex.height); }
+    const visibleLines = (snapshot.lines || []).filter(l => !l.hidden);
+    visibleLines.forEach(line=>drawLineExportV121(c,line));
+    drawSpacesExportV141(c, snapshot, false);
+    displayObjectsV130(snapshot.objects || [], m).forEach(o=>drawObjExportV121(c,o));
+    if(drawStepNumbers){
+      visibleLines.forEach((l,i)=>{ const mid=lineMid(l); c.save(); c.fillStyle='#fff'; c.beginPath(); c.arc(mid.x,mid.y,11,0,Math.PI*2); c.fill(); c.fillStyle='#111'; c.font='bold 11px system-ui'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(String(getLineNo(l,i+1)),mid.x,mid.y); c.restore(); });
+      drawSpacesExportV141(c, snapshot, true);
+    }
+    return ex;
+  };
+  renderSnapshotToExportCanvasV121 = function(snapshot, drawStepNumbers=true){ return renderSnapshotToExportCanvasV126(snapshot, drawStepNumbers, selectedModeV126?.() || mode); };
+}
+
+if(typeof renderSnapshotToExportVideoCanvasV134 === 'function'){
+  const renderSnapshotToExportVideoCanvasBeforeV141 = renderSnapshotToExportVideoCanvasV134;
+  renderSnapshotToExportVideoCanvasV134 = function(snapshot, drawStepNumbers=true, exportMode, playTitle='', source='', speed=1){
+    const ex = renderSnapshotToExportVideoCanvasBeforeV141(snapshot, drawStepNumbers, exportMode, playTitle, source, speed);
+    // 既存のタイトル付き動画キャンバスへ、最後にスペースを重ねると選手の上に出るため、ここでは描かない。
+    // 画像保存側と通常再生側でスペースが表示されます。動画本編はv14.1専用描画で再上書きします。
+    const m = exportMode || mode;
+    const c = ex.getContext('2d');
+    // コート領域の座標はv13.4の描画関数内で固定比率。ここでは全体再描画を避けるため、通常動画は既存を優先。
+    return ex;
+  };
+}
+
+const makeInterpolatedSnapshotBeforeV141 = typeof makeInterpolatedSnapshotV137 === 'function' ? makeInterpolatedSnapshotV137 : null;
+if(makeInterpolatedSnapshotBeforeV141){
+  makeInterpolatedSnapshotV137 = function(from,to,t){
+    const snap = makeInterpolatedSnapshotBeforeV141(from,to,t);
+    snap.spaces = interpolateSpacesV141(from.spaces||[], to.spaces||[], t);
+    snap.spaceMoves = cloneV141(to.spaceMoves||[]);
+    return snap;
+  };
+}
+
+setTimeout(()=>{
+  installSpaceButtonV141();
+  rewireCanvasV141();
+  if($('exportStatusV120')) setExportStatusV120('v14.4：スペースゾーンに×削除ボタンを追加。🔵で配置、ドラッグ移動、右下ハンドル伸縮、白丸番号管理はそのままです。');
+  render();
+}, 1800);
+
+/* v14.3 線種の再編集
+   - 白丸番号をクリックした後、番号変更だけでなく線の種類も変更可能
+   - 移動 / ドライブ / パス / シュートを後から修正できる
+   - 他機能は変更なし
+*/
+function lineKindLabelV143(k){
+  if(k === 'moveLine') return '移動';
+  if(k === 'drive') return 'ドライブ';
+  if(k === 'pass') return 'パス';
+  if(k === 'shoot') return 'シュート';
+  return '種類';
+}
+function setLineKindV143(line, kind){
+  if(!line) return;
+  line.k = kind;
+  inlineTargetLine = null;
+  try{ numberListTargetLineV1083 = null; }catch(e){}
+  const box = $('numberList');
+  if(box) box.classList.add('hidden');
+  render();
+}
+function makeKindButtonV143(line, kind, text){
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = text;
+  b.className = 'kind-edit-btn-v143';
+  if(line && line.k === kind) b.classList.add('active-kind');
+  b.onclick = e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    setLineKindV143(line, kind);
+  };
+  return b;
+}
+function showNumberList(line, clientX, clientY){
+  inlineTargetLine = line;
+  try{ numberListTargetLineV1083 = line; }catch(e){}
+
+  const box = $('numberList');
+  if(!box) return;
+
+  const maxNo = Math.max(10, ...(lines || []).filter(l=>!l.hidden).map((l,i)=>getLineNo(l,i+1)), ...(spaceMovesV141 || []).map((m,i)=>getSpaceMoveNoV141(m,i+1)));
+  box.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.className = 'number-list-title-v143';
+  title.textContent = '番号変更';
+  box.appendChild(title);
+
+  for(let i=1;i<=maxNo;i++){
+    const b=document.createElement('button');
+    b.type='button';
+    b.textContent=String(i);
+    if(getLineNo(line)===i) b.classList.add('active');
+    b.onclick = e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      setLineNo(line,i);
+      inlineTargetLine=null;
+      try{ numberListTargetLineV1083=null; }catch(err){}
+      box.classList.add('hidden');
+      render();
+    };
+    box.appendChild(b);
+  }
+
+  const plus=document.createElement('button');
+  plus.type='button';
+  plus.textContent=`＋${maxNo+1}`;
+  plus.onclick=e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    setLineNo(line,maxNo+1);
+    inlineTargetLine=null;
+    try{ numberListTargetLineV1083=null; }catch(err){}
+    box.classList.add('hidden');
+    render();
+  };
+  box.appendChild(plus);
+
+  const kindTitle = document.createElement('div');
+  kindTitle.className = 'number-list-title-v143 kind-title-v143';
+  kindTitle.textContent = `種類変更：${lineKindLabelV143(line && line.k)}`;
+  box.appendChild(kindTitle);
+
+  const kindWrap = document.createElement('div');
+  kindWrap.className = 'kind-grid-v143';
+  kindWrap.appendChild(makeKindButtonV143(line, 'moveLine', '移動'));
+  kindWrap.appendChild(makeKindButtonV143(line, 'drive', 'ドライブ'));
+  kindWrap.appendChild(makeKindButtonV143(line, 'pass', 'パス'));
+  kindWrap.appendChild(makeKindButtonV143(line, 'shoot', 'シュート'));
+  box.appendChild(kindWrap);
+
+  const del=document.createElement('button');
+  del.type='button';
+  del.textContent='× 削除';
+  del.className='delete-line-btn';
+  del.onclick=e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(typeof deleteLineV1083 === 'function') deleteLineV1083(line);
+    else { lines = (lines||[]).filter(l=>l.__id !== line.__id); box.classList.add('hidden'); render(); }
+  };
+  box.appendChild(del);
+
+  const area=$('courtArea').getBoundingClientRect();
+  box.style.left=Math.max(8,Math.min(area.width-142,clientX-area.left+10))+'px';
+  box.style.top=Math.max(8,Math.min(area.height-390,clientY-area.top+10))+'px';
+  box.classList.remove('hidden');
+  render();
+}
+setTimeout(()=>{
+  if($('exportStatusV120')) setExportStatusV120('v14.3：白丸番号をタップして、移動/ドライブ/パス/シュートを後から修正できます。');
+}, 1800);
+
+/* v14.5 スクリーンマーク追加
+   - 移動/ドライブ選択メニューにスクリーンを追加
+   - 白丸番号メニューでもスクリーンへ後から変更可能
+   - 既存機能は変更なし
+*/
+function drawScreenMarkV145(c,l){
+  if(!l) return;
+  const x1=l.x1, y1=l.y1, x2=l.x2, y2=l.y2;
+  const dx=x2-x1, dy=y2-y1;
+  const len=Math.hypot(dx,dy)||1;
+  const ux=dx/len, uy=dy/len;
+  const px=-uy, py=ux;
+  const col="#f97316";
+
+  // v15.0: 選手マークと被らないよう、スクリーン本体を進行方向側へ逃がす
+  const forwardOffset = 36;
+  const sx = x2 + ux * forwardOffset;
+  const sy = y2 + uy * forwardOffset;
+
+  c.save();
+  c.globalAlpha = l.alpha ?? 1;
+
+  // スクリーン位置までの移動軌跡は細めのオレンジ点線
+  c.strokeStyle=col;
+  c.lineWidth=4;
+  c.lineCap="round";
+  c.lineJoin="round";
+  c.setLineDash([7,9]);
+  c.beginPath();
+  c.moveTo(x1,y1);
+  c.lineTo(sx,sy);
+  c.stroke();
+  c.setLineDash([]);
+
+  // スクリーン本体：進行方向に対して垂直の太い壁マーク
+  const wallHalf=24;
+  c.strokeStyle="rgba(255,255,255,.92)";
+  c.lineWidth=16;
+  c.lineCap="round";
+  c.beginPath();
+  c.moveTo(sx + px*wallHalf, sy + py*wallHalf);
+  c.lineTo(sx - px*wallHalf, sy - py*wallHalf);
+  c.stroke();
+
+  c.strokeStyle=col;
+  c.lineWidth=11;
+  c.beginPath();
+  c.moveTo(sx + px*wallHalf, sy + py*wallHalf);
+  c.lineTo(sx - px*wallHalf, sy - py*wallHalf);
+  c.stroke();
+
+  // 小さいラベルも前方へ配置
+  c.fillStyle="#111827";
+  c.strokeStyle="#fff";
+  c.lineWidth=3;
+  c.beginPath();
+  c.roundRect(sx-17, sy-42, 34, 22, 8);
+  c.fill();
+  c.stroke();
+  c.fillStyle="#fff";
+  c.font="900 11px system-ui";
+  c.textAlign="center";
+  c.textBaseline="middle";
+  c.fillText("SC", sx, sy-31);
+
+  c.restore();
+}
+
+// 画面描画にスクリーン線を追加
+const drawLineBeforeV145 = drawLine;
+drawLine = function(l){
+  if(l && l.k === "screen"){
+    drawScreenMarkV145(ctx,l);
+    return;
+  }
+  drawLineBeforeV145(l);
+};
+
+// 画像/動画保存用の描画にもスクリーン線を追加
+if(typeof drawLineExportV121 === "function"){
+  const drawLineExportBeforeV145 = drawLineExportV121;
+  drawLineExportV121 = function(c,l){
+    if(l && l.k === "screen"){
+      drawScreenMarkV145(c,l);
+      return;
+    }
+    drawLineExportBeforeV145(c,l);
+  };
+}
+
+function addScreenLineV145(start,endObj){
+  const maxNo = (lines||[]).reduce((m,l,i)=>Math.max(m,getLineNo(l,i+1)),0);
+  const l={
+    x1:start.x,y1:start.y,x2:endObj.x,y2:endObj.y,
+    k:"screen",
+    __id:"line_"+Date.now()+"_"+Math.random().toString(36).slice(2),
+    stepNo:maxNo+1,
+    fixedStepNo:maxNo+1,
+    moveRef:{id:endObj.id,t:endObj.t,x:endObj.x,y:endObj.y}
+  };
+  lines.push(l);
+}
+
+// スクリーンを選択済みの場合、新規ドロップ時にもスクリーン線で作成
+const addAutoLineBeforeV145 = addAutoLine;
+addAutoLine = function(start,endObj){
+  if(start && start.t === "o" && autoLineMoveKind === "screen"){
+    if(!isRecording){
+      initialSnapshot = snapShot();
+      return;
+    }
+    addScreenLineV145(start,endObj);
+    return;
+  }
+  addAutoLineBeforeV145(start,endObj);
+};
+
+function chooseScreenKindV145(){
+  if(!lastDroppedStartV104 || !lastDroppedObjV104) return;
+  const last = [...(lines||[])].reverse().find(l=>!l.hidden);
+  if(last && last.moveRef && last.moveRef.id === lastDroppedObjV104.id && last.moveRef.t === lastDroppedObjV104.t){
+    last.k = "screen";
+  }
+  autoLineMoveKind = "screen";
+  if(typeof markChoiceV106 === "function") markChoiceV106("chooseScreenBtnV145");
+  if(typeof scheduleBottomChoiceHideV106 === "function") scheduleBottomChoiceHideV106();
+  render();
+}
+
+function installScreenChoiceButtonV145(){
+  const moveChoice = $("moveChoice");
+  if(!moveChoice || $("chooseScreenBtnV145")) return;
+  const b=document.createElement("button");
+  b.id="chooseScreenBtnV145";
+  b.type="button";
+  b.textContent="スクリーン";
+  b.className="screen-choice-btn-v145";
+  b.dataset.baseText="スクリーン";
+  b.onpointerenter=e=>{ e.preventDefault(); chooseScreenKindV145(); };
+  b.onpointerdown=e=>{ e.preventDefault(); e.stopPropagation(); chooseScreenKindV145(); };
+  b.onclick=e=>{ e.preventDefault(); e.stopPropagation(); chooseScreenKindV145(); };
+  moveChoice.appendChild(b);
+}
+
+// 既存の種類変更ラベルを拡張
+lineKindLabelV143 = function(k){
+  if(k === 'moveLine') return '移動';
+  if(k === 'drive') return 'ドライブ';
+  if(k === 'screen') return 'スクリーン';
+  if(k === 'pass') return 'パス';
+  if(k === 'shoot') return 'シュート';
+  return '種類';
+};
+
+// 白丸メニューにスクリーンを追加
+const showNumberListBeforeV145 = showNumberList;
+showNumberList = function(line, clientX, clientY){
+  inlineTargetLine = line;
+  try{ numberListTargetLineV1083 = line; }catch(e){}
+
+  const box = $('numberList');
+  if(!box) return showNumberListBeforeV145(line, clientX, clientY);
+
+  const maxNo = Math.max(10, ...(lines || []).filter(l=>!l.hidden).map((l,i)=>getLineNo(l,i+1)), ...((typeof spaceMovesV141 !== 'undefined' ? spaceMovesV141 : []) || []).map((m,i)=>getSpaceMoveNoV141(m,i+1)));
+  box.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.className = 'number-list-title-v143';
+  title.textContent = '番号変更';
+  box.appendChild(title);
+
+  for(let i=1;i<=maxNo;i++){
+    const b=document.createElement('button');
+    b.type='button';
+    b.textContent=String(i);
+    if(getLineNo(line)===i) b.classList.add('active');
+    b.onclick = e=>{
+      e.preventDefault(); e.stopPropagation();
+      setLineNo(line,i);
+      inlineTargetLine=null;
+      try{ numberListTargetLineV1083=null; }catch(err){}
+      box.classList.add('hidden');
+      render();
+    };
+    box.appendChild(b);
+  }
+
+  const plus=document.createElement('button');
+  plus.type='button';
+  plus.textContent=`＋${maxNo+1}`;
+  plus.onclick=e=>{
+    e.preventDefault(); e.stopPropagation();
+    setLineNo(line,maxNo+1);
+    inlineTargetLine=null;
+    try{ numberListTargetLineV1083=null; }catch(err){}
+    box.classList.add('hidden');
+    render();
+  };
+  box.appendChild(plus);
+
+  const kindTitle = document.createElement('div');
+  kindTitle.className = 'number-list-title-v143 kind-title-v143';
+  kindTitle.textContent = `種類変更：${lineKindLabelV143(line && line.k)}`;
+  box.appendChild(kindTitle);
+
+  const kindWrap = document.createElement('div');
+  kindWrap.className = 'kind-grid-v143 kind-grid-v145';
+  kindWrap.appendChild(makeKindButtonV143(line, 'moveLine', '移動'));
+  kindWrap.appendChild(makeKindButtonV143(line, 'drive', 'ドライブ'));
+  kindWrap.appendChild(makeKindButtonV143(line, 'screen', 'スクリーン'));
+  kindWrap.appendChild(makeKindButtonV143(line, 'pass', 'パス'));
+  kindWrap.appendChild(makeKindButtonV143(line, 'shoot', 'シュート'));
+  box.appendChild(kindWrap);
+
+  const del=document.createElement('button');
+  del.type='button';
+  del.textContent='× 削除';
+  del.className='delete-line-btn';
+  del.onclick=e=>{
+    e.preventDefault(); e.stopPropagation();
+    if(typeof deleteLineV1083 === 'function') deleteLineV1083(line);
+    else { lines = (lines||[]).filter(l=>l.__id !== line.__id); box.classList.add('hidden'); render(); }
+  };
+  box.appendChild(del);
+
+  const area=$('courtArea').getBoundingClientRect();
+  box.style.left=Math.max(8,Math.min(area.width-158,clientX-area.left+10))+'px';
+  box.style.top=Math.max(8,Math.min(area.height-430,clientY-area.top+10))+'px';
+  box.classList.remove('hidden');
+  render();
+};
+
+setTimeout(()=>{
+  installScreenChoiceButtonV145();
+  if($('exportStatusV120')) setExportStatusV120('v14.5：移動/ドライブ選択にスクリーンを追加。白丸番号から後でスクリーンへ変更できます。');
+  render();
+}, 2000);
+
+/* v15.1 サイドチェンジ（鏡反転）機能
+   - 保存プレー/ムーブライブラリのプレーを左右反転して複製
+   - 名前に「サイドチェンジ」を付与
+   - 既存機能は変更なし
+*/
+(function(){
+  const SIDE_SUFFIX_V151 = 'サイドチェンジ';
+
+  function courtWidthV151(play){
+    return (play && play.mode === 'full') ? 1400 : 750;
+  }
+  function sideTitleV151(title){
+    const base = String(title || 'Play').trim() || 'Play';
+    return base.includes(SIDE_SUFFIX_V151) ? base : `${base} ${SIDE_SUFFIX_V151}`;
+  }
+  function newIdV151(prefix='play'){
+    return `${prefix}_side_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  }
+  function mirrorPointXV151(x,w){
+    const n = Number(x);
+    return Number.isFinite(n) ? w - n : x;
+  }
+  function mirrorObjectV151(o,w){
+    if(!o || typeof o !== 'object') return o;
+    return {...o, x: mirrorPointXV151(o.x,w)};
+  }
+  function mirrorLineV151(l,w){
+    if(!l || typeof l !== 'object') return l;
+    const out = {...l, x1: mirrorPointXV151(l.x1,w), x2: mirrorPointXV151(l.x2,w)};
+    if(l.moveRef && typeof l.moveRef === 'object'){
+      out.moveRef = {...l.moveRef, x: mirrorPointXV151(l.moveRef.x,w)};
+    }
+    return out;
+  }
+  function mirrorSpaceV151(sp,w){
+    if(!sp || typeof sp !== 'object') return sp;
+    return {...sp, x: mirrorPointXV151(sp.x,w)};
+  }
+  function mirrorSpaceMoveV151(m,w){
+    if(!m || typeof m !== 'object') return m;
+    const out = {...m};
+    if(m.from) out.from = {...m.from, x: mirrorPointXV151(m.from.x,w)};
+    if(m.to) out.to = {...m.to, x: mirrorPointXV151(m.to.x,w)};
+    return out;
+  }
+  function mirrorFrameV151(frame,w){
+    if(!frame || typeof frame !== 'object') return frame;
+    return {
+      ...frame,
+      objects: (frame.objects || []).map(o=>mirrorObjectV151(o,w)),
+      lines: (frame.lines || []).map(l=>mirrorLineV151(l,w)),
+      spaces: (frame.spaces || []).map(sp=>mirrorSpaceV151(sp,w)),
+      spaceMoves: (frame.spaceMoves || []).map(m=>mirrorSpaceMoveV151(m,w))
+    };
+  }
+  function mirrorPlayV151(play){
+    if(!play) return null;
+    const w = courtWidthV151(play);
+    const mirrored = JSON.parse(JSON.stringify(play));
+    mirrored.id = newIdV151(play.id && String(play.id).startsWith('lib_') ? 'lib' : 'play');
+    mirrored.title = sideTitleV151(play.title);
+    mirrored.createdAt = new Date().toISOString();
+    mirrored.sideChangedFrom = play.id || null;
+    mirrored.frames = (play.frames || []).map(f=>mirrorFrameV151(f,w));
+    // 古い保存形式用の保険
+    if(Array.isArray(play.objects)) mirrored.objects = play.objects.map(o=>mirrorObjectV151(o,w));
+    if(Array.isArray(play.lines)) mirrored.lines = play.lines.map(l=>mirrorLineV151(l,w));
+    if(Array.isArray(play.spaces)) mirrored.spaces = play.spaces.map(sp=>mirrorSpaceV151(sp,w));
+    if(Array.isArray(play.spaceMoves)) mirrored.spaceMoves = play.spaceMoves.map(m=>mirrorSpaceMoveV151(m,w));
+    return mirrored;
+  }
+
+  function sideChangeSavedPlayV151(play){
+    try{
+      const mirrored = mirrorPlayV151(play);
+      if(!mirrored) return;
+      const list = (typeof getSaved === 'function') ? getSaved() : [];
+      list.unshift(mirrored);
+      if(typeof setSaved === 'function') setSaved(list);
+      if(typeof renderSavedPlays === 'function') renderSavedPlays();
+      if(typeof playSaved === 'function') playSaved(mirrored);
+    }catch(err){
+      console.error(err);
+      alert('サイドチェンジの作成に失敗しました。');
+    }
+  }
+  function sideChangeLibraryPlayV151(play){
+    try{
+      const mirrored = mirrorPlayV151(play);
+      if(!mirrored) return;
+      const list = (typeof getMoveLibraryV118 === 'function') ? getMoveLibraryV118() : [];
+      list.unshift(mirrored);
+      if(typeof setMoveLibraryV118 === 'function') setMoveLibraryV118(list);
+      if(typeof renderMoveLibraryV118 === 'function') renderMoveLibraryV118();
+      if(typeof loadLibraryPlayV118 === 'function') loadLibraryPlayV118(mirrored);
+    }catch(err){
+      console.error(err);
+      alert('ライブラリのサイドチェンジ作成に失敗しました。');
+    }
+  }
+
+  function injectSavedSideButtonsV151(){
+    const box = document.getElementById('savedPlayList');
+    if(!box || typeof getSaved !== 'function') return;
+    const plays = getSaved();
+    const rows = [...box.querySelectorAll('.saved-play-wrap')];
+    rows.forEach((row,idx)=>{
+      if(row.querySelector('.side-change-play-btn-v151')) return;
+      const play = plays[idx];
+      if(!play) return;
+      const b=document.createElement('button');
+      b.type='button';
+      b.className='side-change-play-btn-v151';
+      b.textContent='↔';
+      b.title='サイドチェンジを作成';
+      b.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); sideChangeSavedPlayV151(play); };
+      row.appendChild(b);
+    });
+  }
+  function injectLibrarySideButtonsV151(){
+    const box = document.getElementById('moveLibraryList');
+    if(!box || typeof getMoveLibraryV118 !== 'function') return;
+    const plays = getMoveLibraryV118();
+    const rows = [...box.querySelectorAll('.library-item')];
+    rows.forEach((row,idx)=>{
+      if(row.querySelector('.side-change-library-btn-v151')) return;
+      const play = plays[idx];
+      if(!play) return;
+      const b=document.createElement('button');
+      b.type='button';
+      b.className='side-change-library-btn-v151';
+      b.textContent='↔';
+      b.title='サイドチェンジを作成';
+      b.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); sideChangeLibraryPlayV151(play); };
+      row.appendChild(b);
+    });
+  }
+  function injectAllV151(){
+    injectSavedSideButtonsV151();
+    injectLibrarySideButtonsV151();
+  }
+
+  const oldRenderSavedV151 = typeof renderSavedPlays === 'function' ? renderSavedPlays : null;
+  if(oldRenderSavedV151){
+    renderSavedPlays = function(){
+      const r = oldRenderSavedV151.apply(this, arguments);
+      setTimeout(injectAllV151,0);
+      return r;
+    };
+  }
+  const oldRenderLibraryV151 = typeof renderMoveLibraryV118 === 'function' ? renderMoveLibraryV118 : null;
+  if(oldRenderLibraryV151){
+    renderMoveLibraryV118 = function(){
+      const r = oldRenderLibraryV151.apply(this, arguments);
+      setTimeout(injectAllV151,0);
+      return r;
+    };
+  }
+  setTimeout(injectAllV151,1200);
+})();
+
+/* v15.3 サイドチェンジ一時表示（保存を増やさない）
+   - 保存プレー/ムーブライブラリの↔ボタンは複製作成ではなく通常⇄サイドチェンジ表示を切替
+   - 選択中プレーにもサイドチェンジ切替ボタンを追加
+   - 画像保存/動画保存/共有は現在の表示状態を使用
+*/
+(function(){
+  const SIDE_LABEL = 'サイドチェンジ';
+  let sideState = {active:false, original:null, mirrored:null, source:'保存プレー'};
+
+  function cloneLocal(x){ try{return JSON.parse(JSON.stringify(x));}catch(e){return x;} }
+  function courtWidth(play){ return (play && play.mode === 'full') ? 1400 : 750; }
+  function mirrorX(x,w){ const n=Number(x); return Number.isFinite(n) ? w - n : x; }
+  function mirrorObj(o,w){ return (!o || typeof o !== 'object') ? o : {...o, x:mirrorX(o.x,w)}; }
+  function mirrorLine(l,w){
+    if(!l || typeof l !== 'object') return l;
+    const out={...l, x1:mirrorX(l.x1,w), x2:mirrorX(l.x2,w)};
+    if(l.moveRef && typeof l.moveRef === 'object') out.moveRef={...l.moveRef, x:mirrorX(l.moveRef.x,w)};
+    return out;
+  }
+  function mirrorSpace(sp,w){ return (!sp || typeof sp !== 'object') ? sp : {...sp, x:mirrorX(sp.x,w)}; }
+  function mirrorSpaceMove(m,w){
+    if(!m || typeof m !== 'object') return m;
+    const out={...m};
+    if(m.from) out.from={...m.from, x:mirrorX(m.from.x,w)};
+    if(m.to) out.to={...m.to, x:mirrorX(m.to.x,w)};
+    return out;
+  }
+  function mirrorFrame(f,w){
+    if(!f || typeof f !== 'object') return f;
+    return {
+      ...f,
+      objects:(f.objects||[]).map(o=>mirrorObj(o,w)),
+      lines:(f.lines||[]).map(l=>mirrorLine(l,w)),
+      spaces:(f.spaces||[]).map(s=>mirrorSpace(s,w)),
+      spaceMoves:(f.spaceMoves||[]).map(m=>mirrorSpaceMove(m,w))
+    };
+  }
+  function mirrorPlay(play){
+    if(!play) return null;
+    const w=courtWidth(play);
+    const out=cloneLocal(play);
+    out.id = String(play.id || 'current') + '__side_preview';
+    out.originalIdV152 = play.id || null;
+    out.sidePreviewV152 = true;
+    out.title = String(play.title || 'Play').replace(/\s*サイドチェンジ\s*$/,'');
+    out.frames=(play.frames||[]).map(f=>mirrorFrame(f,w));
+    if(Array.isArray(play.objects)) out.objects=play.objects.map(o=>mirrorObj(o,w));
+    if(Array.isArray(play.lines)) out.lines=play.lines.map(l=>mirrorLine(l,w));
+    if(Array.isArray(play.spaces)) out.spaces=play.spaces.map(s=>mirrorSpace(s,w));
+    if(Array.isArray(play.spaceMoves)) out.spaceMoves=play.spaceMoves.map(m=>mirrorSpaceMove(m,w));
+    return out;
+  }
+  function setSelectedMeta(play,source){
+    try{
+      if(typeof selectedPlayV125 !== 'undefined') selectedPlayV125={id:play.id,title:play.title||'無題プレー',source:source};
+      if(typeof selectedPlayDataV126 !== 'undefined') selectedPlayDataV126=cloneLocal(play);
+      if(typeof selectedPlaySourceV126 !== 'undefined') selectedPlaySourceV126=source;
+      if(typeof updateSelectedPlayPanelV125 === 'function') updateSelectedPlayPanelV125();
+    }catch(e){}
+  }
+  function loadPreview(play,source){
+    if(!play) return;
+    if(typeof playSaved === 'function') playSaved(play);
+    setSelectedMeta(play,source);
+    setTimeout(updateSideButtonUI,0);
+  }
+  function currentOriginalPlay(){
+    if(sideState.active && sideState.original) return sideState.original;
+    if(typeof selectedPlayDataV126 !== 'undefined' && selectedPlayDataV126) return cloneLocal(selectedPlayDataV126);
+    if(typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && typeof getSaved === 'function'){
+      const found=(getSaved()||[]).find(p=>p.id===selectedPlayV125.id);
+      if(found) return cloneLocal(found);
+    }
+    return null;
+  }
+  function sourceFor(play, fallback){
+    if(fallback) return fallback;
+    try{ return selectedPlaySourceV126 || selectedPlayV125?.source || '保存プレー'; }catch(e){ return '保存プレー'; }
+  }
+  function toggleSide(play,source){
+    const base = play ? cloneLocal(play) : currentOriginalPlay();
+    if(!base){ alert('先に保存プレーかムーブライブラリを選択してください'); return; }
+    const baseId = base.originalIdV152 || base.id;
+    if(sideState.active && sideState.original && (sideState.original.id===baseId || sideState.mirrored?.id===base.id)){
+      const src = sideState.source || sourceFor(base,source);
+      const original = cloneLocal(sideState.original);
+      sideState = {active:false, original:null, mirrored:null, source:src};
+      loadPreview(original, src || '保存プレー');
+      return;
+    }
+    const mirrored=mirrorPlay(base);
+    if(!mirrored) return;
+    const src = sourceFor(base,source);
+    sideState={active:true, original:cloneLocal(base), mirrored:cloneLocal(mirrored), source:src};
+    loadPreview(mirrored, src);
+  }
+
+  function addSelectedToggleButton(){
+    const panel=document.getElementById('selectedPlayPanelV125');
+    if(!panel || document.getElementById('sideToggleSelectedV152')) return;
+    let badge=document.getElementById('sideModeBadgeV153');
+    if(!badge){
+      badge=document.createElement('span');
+      badge.id='sideModeBadgeV153';
+      badge.className='side-mode-badge-v153 normal';
+      badge.textContent='NORMAL';
+      panel.appendChild(badge);
+    }
+    const b=document.createElement('button');
+    b.id='sideToggleSelectedV152';
+    b.type='button';
+    b.className='side-toggle-selected-v152';
+    b.textContent='↔ サイドチェンジ';
+    b.onclick=(e)=>{e.preventDefault(); e.stopPropagation(); toggleSide(null);};
+    panel.appendChild(b);
+  }
+  function patchSideButtons(){
+    const savedBox=document.getElementById('savedPlayList');
+    if(savedBox && typeof getSaved === 'function'){
+      const plays=getSaved();
+      [...savedBox.querySelectorAll('.saved-play-wrap')].forEach((row,idx)=>{
+        let b=row.querySelector('.side-change-play-btn-v151');
+        if(!b){
+          b=document.createElement('button'); b.type='button'; b.className='side-change-play-btn-v151'; b.textContent='↔'; row.appendChild(b);
+        }
+        const play=plays[idx];
+        b.title='保存を増やさずサイドチェンジ表示';
+        b.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); toggleSide(play,'保存プレー'); };
+      });
+    }
+    const libBox=document.getElementById('moveLibraryList');
+    if(libBox && typeof getMoveLibraryV118 === 'function'){
+      const plays=getMoveLibraryV118();
+      [...libBox.querySelectorAll('.library-item')].forEach((row,idx)=>{
+        let b=row.querySelector('.side-change-library-btn-v151');
+        if(!b){
+          b=document.createElement('button'); b.type='button'; b.className='side-change-library-btn-v151'; b.textContent='↔'; row.appendChild(b);
+        }
+        const play=plays[idx];
+        b.title='保存を増やさずサイドチェンジ表示';
+        b.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); toggleSide(play,'ムーブライブラリ'); };
+      });
+    }
+    addSelectedToggleButton();
+    updateSideButtonUI();
+  }
+  function updateSideButtonUI(){
+    document.querySelectorAll('.side-change-play-btn-v151,.side-change-library-btn-v151,#sideToggleSelectedV152').forEach(b=>{
+      b.classList.toggle('side-active-v152', !!sideState.active);
+    });
+    const b=document.getElementById('sideToggleSelectedV152');
+    if(b) b.textContent = sideState.active ? '↔ 通常表示' : '↔ サイドチェンジ';
+    const badge=document.getElementById('sideModeBadgeV153');
+    if(badge){
+      badge.textContent = sideState.active ? 'SIDE' : 'NORMAL';
+      badge.classList.toggle('side', !!sideState.active);
+      badge.classList.toggle('normal', !sideState.active);
+    }
+    try{
+      const title=document.getElementById('selectedPlayTitleV125');
+      if(title && title.textContent) title.textContent = title.textContent.replace(/\s*サイドチェンジ\s*$/,'');
+      const source=document.getElementById('selectedPlaySourceV125');
+      if(source && source.textContent) source.textContent = source.textContent.replace(/\s*サイドチェンジ\s*/,'').replace(/\s*\/\s*動画保存の対象\s*/,'');
+    }catch(e){}
+  }
+
+  const oldPlaySaved = typeof playSaved === 'function' ? playSaved : null;
+  if(oldPlaySaved){
+    playSaved = function(play){
+      if(!(play && play.sidePreviewV152)) sideState={active:false, original:null, mirrored:null, source:'保存プレー'};
+      const r=oldPlaySaved.apply(this,arguments);
+      setTimeout(()=>{patchSideButtons(); updateSideButtonUI();},0);
+      return r;
+    };
+  }
+  const oldLoadLib = typeof loadLibraryPlayV118 === 'function' ? loadLibraryPlayV118 : null;
+  if(oldLoadLib){
+    loadLibraryPlayV118 = function(play){
+      if(!(play && play.sidePreviewV152)) sideState={active:false, original:null, mirrored:null, source:'ムーブライブラリ'};
+      const r=oldLoadLib.apply(this,arguments);
+      setTimeout(()=>{patchSideButtons(); updateSideButtonUI();},0);
+      return r;
+    };
+  }
+  const oldRenderSaved = typeof renderSavedPlays === 'function' ? renderSavedPlays : null;
+  if(oldRenderSaved){
+    renderSavedPlays=function(){ const r=oldRenderSaved.apply(this,arguments); setTimeout(patchSideButtons,0); return r; };
+  }
+  const oldRenderLib = typeof renderMoveLibraryV118 === 'function' ? renderMoveLibraryV118 : null;
+  if(oldRenderLib){
+    renderMoveLibraryV118=function(){ const r=oldRenderLib.apply(this,arguments); setTimeout(patchSideButtons,0); return r; };
+  }
+
+  setTimeout(()=>{
+    patchSideButtons();
+    if(typeof setExportStatusV120 === 'function') setExportStatusV120('v15.3：保存を増やさず、NORMAL/SIDE表示でサイドチェンジできます。');
+  },1800);
+})();

@@ -1412,3 +1412,481 @@ button{
   .court-play-title-v135 .court-play-title-main{font-size:19px;}
   .court-play-title-v135 .court-play-title-sub{font-size:9px;}
 }
+
+/* v13.8 Large Court Layout - 機能は一切変更せず、左右パネルを圧縮してコートを拡大 */
+@media (min-width:1001px){
+  .shell{
+    grid-template-columns:220px minmax(720px,1fr) 260px !important;
+    gap:10px !important;
+    padding:8px !important;
+  }
+  .court-area{
+    height:calc(100vh - 16px) !important;
+    padding:10px !important;
+  }
+  .center{
+    border-radius:22px !important;
+  }
+  .center::before{
+    border-radius:22px !important;
+  }
+
+  /* canvasを実寸以上にも拡大。属性widthでハーフ/オールを自動判定 */
+  canvas[width="750"]{
+    height:min(calc(100vh - 42px), calc((100vw - 520px) * 0.9333)) !important;
+    width:auto !important;
+    max-width:100% !important;
+  }
+  canvas[width="1400"]{
+    width:100% !important;
+    height:auto !important;
+    max-height:calc(100vh - 42px) !important;
+  }
+  canvas{
+    border-radius:20px !important;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,.14),
+      0 0 0 4px rgba(15,23,42,.85),
+      0 0 0 6px rgba(247,200,95,.28),
+      0 22px 46px rgba(0,0,0,.44) !important;
+  }
+
+  .left,.right{font-size:12px !important;}
+  .brand{
+    min-height:56px !important;
+    padding:10px !important;
+    margin-bottom:8px !important;
+    border-radius:18px !important;
+  }
+  .ball{width:42px !important;height:42px !important;font-size:25px !important;}
+  h1{font-size:18px !important;}
+  .brand p{font-size:9px !important;letter-spacing:.10em !important;}
+  .card{
+    border-radius:18px !important;
+    padding:10px !important;
+    margin-bottom:8px !important;
+  }
+  .card h2{font-size:17px !important;margin-bottom:8px !important;}
+  .panel-badge{top:10px !important;right:10px !important;font-size:8px !important;padding:4px 7px !important;}
+  .move-library-note,.export-status,.position-actions::after,.selected-play-source{font-size:10px !important;line-height:1.35 !important;}
+  .move-library-drop{min-height:150px !important;padding:8px !important;border-radius:16px !important;}
+  .custom-input{height:42px !important;font-size:13px !important;border-radius:14px !important;padding:8px 10px !important;}
+  .position-actions{grid-template-columns:1fr 72px !important;gap:7px !important;}
+  .position-actions .save-custom,.position-actions .small{height:38px !important;font-size:13px !important;}
+  .saved-title{font-size:11px !important;margin:10px 0 6px !important;}
+  .custom-play-list,.move-library-list{gap:6px !important;}
+  .saved-play-wrap.v126-layout,.library-item.v126-layout{border-radius:14px !important;padding:6px !important;}
+  .saved-play-wrap.v126-layout .saved-play-btn,
+  .library-item.v126-layout .library-load,
+  .custom-play-item .load{min-height:30px !important;padding:7px 8px !important;font-size:12px !important;border-radius:11px !important;}
+  .favorite-play-btn,.rename-play-btn-v126,.delete-play-btn,.library-rename-v126,.library-lock,.library-delete{
+    width:22px !important;height:22px !important;min-width:22px !important;min-height:22px !important;font-size:9px !important;border-radius:7px !important;
+  }
+  .selected-play-panel{padding:10px !important;border-radius:16px !important;}
+  .selected-play-label{font-size:8px !important;}
+  .selected-play-title{font-size:20px !important;}
+  .play-action-row{gap:8px !important;}
+  .start-play-btn,.finish-play-btn{height:42px !important;font-size:14px !important;}
+  .log-details{padding:6px 8px !important;border-radius:13px !important;}
+  .playback-controls{padding:8px !important;border-radius:16px !important;}
+  .playback-row button{height:40px !important;}
+  .speed-row-v132{gap:5px !important;}
+  .speed-row-v132 button{height:30px !important;font-size:10px !important;padding:0 4px !important;}
+  .export-controls{gap:6px !important;}
+  .export-btn{height:38px !important;font-size:11px !important;}
+  .court-switch-floating{top:14px !important;left:14px !important;}
+  .court-switch-floating button{min-width:64px !important;height:36px !important;font-size:13px !important;}
+  .defense-float-btn,.reset-float-btn{width:48px !important;height:48px !important;min-width:48px !important;}
+  .defense-float-btn{top:14px !important;right:14px !important;}
+  .reset-float-btn{right:14px !important;bottom:14px !important;}
+  .court-play-title-v135{top:12px !important;left:172px !important;right:74px !important;height:48px !important;border-radius:15px !important;}
+  .court-play-title-v135 .court-play-title-main{font-size:21px !important;}
+  .court-play-title-v135 .court-play-title-sub{font-size:9px !important;}
+}
+
+@media (min-width:1001px) and (max-width:1180px){
+  .shell{grid-template-columns:190px minmax(620px,1fr) 230px !important;gap:8px !important;padding:8px !important;}
+  canvas[width="750"]{height:min(calc(100vh - 42px), calc((100vw - 460px) * 0.9333)) !important;}
+  .card h2{font-size:15px !important;}
+  h1{font-size:16px !important;}
+}
+
+/* v13.9 プレー名表示をコート下部へ移動（機能変更なし） */
+.court-play-title-v135{
+  top:auto !important;
+  bottom:14px !important;
+  left:50% !important;
+  right:auto !important;
+  transform:translateX(-50%) !important;
+  width:min(520px,58%) !important;
+  height:34px !important;
+  min-height:34px !important;
+  padding:3px 18px !important;
+  border-radius:999px !important;
+  background:rgba(8,13,20,.78) !important;
+  border:1px solid rgba(255,205,92,.42) !important;
+  box-shadow:0 8px 18px rgba(0,0,0,.28) !important;
+  backdrop-filter:blur(10px) !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:8px !important;
+  pointer-events:none !important;
+  z-index:22 !important;
+}
+.court-play-title-v135::before{
+  content:"再生中";
+  flex:0 0 auto;
+  padding:2px 7px;
+  border-radius:999px;
+  background:#f7c64a;
+  color:#10151d;
+  font-size:9px;
+  font-weight:1000;
+  letter-spacing:.08em;
+}
+.court-play-title-v135 .court-play-title-main{
+  font-size:16px !important;
+  line-height:1 !important;
+  letter-spacing:.02em !important;
+  max-width:100% !important;
+  overflow:hidden !important;
+  white-space:nowrap !important;
+  text-overflow:ellipsis !important;
+}
+.court-play-title-v135 .court-play-title-sub{
+  display:none !important;
+}
+@media(max-width:1000px){
+  .court-play-title-v135{
+    width:min(420px,70%) !important;
+    height:30px !important;
+    bottom:10px !important;
+    padding:2px 12px !important;
+  }
+  .court-play-title-v135 .court-play-title-main{font-size:13px !important;}
+  .court-play-title-v135::before{font-size:8px;padding:1px 6px;}
+}
+
+
+/* v14.0 下部操作バー + プレー名表示改善（機能変更なし） */
+:root{ --bottom-ui-offset:14px; }
+
+/* ハーフ/オールをコート下部へ */
+.court-switch-floating{
+  top:auto !important;
+  left:14px !important;
+  bottom:14px !important;
+  right:auto !important;
+  z-index:42 !important;
+  padding:4px !important;
+  border-radius:999px !important;
+  background:rgba(8,13,20,.82) !important;
+  border:1px solid rgba(255,255,255,.16) !important;
+  box-shadow:0 10px 22px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.08) !important;
+  backdrop-filter:blur(12px) !important;
+}
+.court-switch-floating button{
+  min-width:58px !important;
+  height:34px !important;
+  padding:0 14px !important;
+  font-size:13px !important;
+  border-radius:999px !important;
+}
+
+/* Dボタンも下部へ。リセットと横並び */
+.defense-float-btn{
+  top:auto !important;
+  bottom:14px !important;
+  right:70px !important;
+  width:44px !important;
+  height:44px !important;
+  min-width:44px !important;
+  z-index:44 !important;
+}
+.reset-float-btn{
+  top:auto !important;
+  bottom:14px !important;
+  right:14px !important;
+  width:44px !important;
+  height:44px !important;
+  min-width:44px !important;
+  z-index:44 !important;
+}
+
+/* プレー名：下部中央に大きめ・細すぎない表示。"再生中"ラベルは出さない */
+.court-play-title-v135{
+  top:auto !important;
+  bottom:16px !important;
+  left:50% !important;
+  right:auto !important;
+  transform:translateX(-50%) !important;
+  width:min(520px,46%) !important;
+  height:44px !important;
+  min-height:44px !important;
+  padding:6px 22px !important;
+  border-radius:999px !important;
+  background:linear-gradient(180deg,rgba(28,37,50,.92),rgba(7,13,22,.88)) !important;
+  border:1px solid rgba(247,200,95,.55) !important;
+  box-shadow:0 12px 28px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.09) !important;
+  backdrop-filter:blur(14px) !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  pointer-events:none !important;
+  z-index:40 !important;
+}
+.court-play-title-v135::before{ content:none !important; display:none !important; }
+.court-play-title-v135 .court-play-title-main{
+  display:block !important;
+  width:100% !important;
+  text-align:center !important;
+  font-size:22px !important;
+  line-height:1.05 !important;
+  font-weight:1000 !important;
+  letter-spacing:-.02em !important;
+  color:#fff !important;
+  text-shadow:0 3px 12px rgba(0,0,0,.5) !important;
+  overflow:hidden !important;
+  white-space:nowrap !important;
+  text-overflow:ellipsis !important;
+}
+.court-play-title-v135 .court-play-title-sub{ display:none !important; }
+
+/* large court rulesの上書き */
+@media (min-width:1001px){
+  .court-switch-floating{top:auto !important;left:14px !important;bottom:14px !important;right:auto !important;}
+  .defense-float-btn{top:auto !important;bottom:14px !important;right:70px !important;}
+  .reset-float-btn{top:auto !important;bottom:14px !important;right:14px !important;}
+  .court-play-title-v135{top:auto !important;bottom:16px !important;left:50% !important;right:auto !important;width:min(520px,46%) !important;height:44px !important;}
+  .court-play-title-v135 .court-play-title-main{font-size:22px !important;}
+}
+
+@media(max-width:1000px){
+  .court-switch-floating{bottom:10px !important;left:10px !important;}
+  .court-switch-floating button{min-width:52px !important;height:31px !important;font-size:12px !important;padding:0 10px !important;}
+  .defense-float-btn{bottom:10px !important;right:62px !important;width:40px !important;height:40px !important;min-width:40px !important;}
+  .reset-float-btn{bottom:10px !important;right:10px !important;width:40px !important;height:40px !important;min-width:40px !important;}
+  .court-play-title-v135{bottom:10px !important;width:min(360px,44%) !important;height:38px !important;min-height:38px !important;padding:5px 14px !important;}
+  .court-play-title-v135 .court-play-title-main{font-size:16px !important;}
+}
+
+/* v14.1 スペースゾーン：コート内の青い斜線エリア */
+.space-zone-tool-v141{
+  position:absolute;
+  z-index:46;
+  right:74px;
+  bottom:16px;
+  width:46px;
+  height:46px;
+  min-width:46px;
+  padding:0 !important;
+  border-radius:999px !important;
+  background:rgba(12,17,23,.86) !important;
+  color:#fff !important;
+  border:1px solid rgba(255,255,255,.22) !important;
+  box-shadow:0 10px 24px rgba(0,0,0,.35);
+  backdrop-filter:blur(8px);
+  font-size:20px !important;
+  display:grid;
+  place-items:center;
+}
+.space-zone-tool-v141.active{
+  background:#1764ff !important;
+  border-color:#60a5fa !important;
+  box-shadow:0 0 0 4px rgba(37,99,235,.28), 0 10px 24px rgba(0,0,0,.35);
+}
+@media(max-width:1000px){
+  .space-zone-tool-v141{right:64px;bottom:10px;width:42px;height:42px;min-width:42px;}
+}
+
+
+/* v14.2 🔵スペースボタン配置修正：D/リセットと重ならないよう右下に3つ並べる */
+.space-zone-tool-v141{
+  top:auto !important;
+  bottom:14px !important;
+  right:126px !important;
+  width:44px !important;
+  height:44px !important;
+  min-width:44px !important;
+  z-index:45 !important;
+}
+.defense-float-btn{
+  right:70px !important;
+  z-index:45 !important;
+}
+.reset-float-btn{
+  right:14px !important;
+  z-index:45 !important;
+}
+@media(max-width:1000px){
+  .space-zone-tool-v141{
+    bottom:10px !important;
+    right:114px !important;
+    width:40px !important;
+    height:40px !important;
+    min-width:40px !important;
+  }
+  .defense-float-btn{right:62px !important;}
+  .reset-float-btn{right:10px !important;}
+}
+
+/* v14.3 線種編集メニュー */
+.number-list-title-v143{
+  color:#111;
+  font-size:11px;
+  font-weight:900;
+  text-align:center;
+  padding:3px 2px 5px;
+  border-bottom:1px solid #e5e7eb;
+  margin-bottom:4px;
+}
+.number-list-title-v143.kind-title-v143{
+  border-top:1px solid #e5e7eb;
+  border-bottom:0;
+  margin:6px 0 3px;
+  padding-top:7px;
+  color:#1764ff;
+}
+.kind-grid-v143{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:4px;
+  margin:2px 0 6px;
+}
+.number-list .kind-edit-btn-v143{
+  height:30px !important;
+  font-size:11px !important;
+  padding:0 2px !important;
+  margin:0 !important;
+  border-radius:7px !important;
+  background:#f8fafc !important;
+  color:#111 !important;
+  border:1px solid #d1d5db !important;
+}
+.number-list .kind-edit-btn-v143.active-kind{
+  background:#1764ff !important;
+  color:#fff !important;
+  border-color:#1764ff !important;
+  box-shadow:0 0 0 2px rgba(23,100,255,.25);
+}
+
+/* v14.5 スクリーンマーク追加 */
+#chooseScreenBtnV145,
+.screen-choice-btn-v145{
+  background:#f97316 !important;
+  border-color:#fdba74 !important;
+  color:#111 !important;
+  font-weight:900 !important;
+}
+#chooseScreenBtnV145.selected-choice{
+  box-shadow:0 0 0 3px rgba(249,115,22,.55) !important;
+  filter:brightness(1.12) !important;
+}
+.kind-grid-v145{
+  grid-template-columns:1fr 1fr !important;
+}
+.kind-grid-v145 .kind-edit-btn-v143:nth-child(3){
+  grid-column:1 / -1;
+  background:#f97316 !important;
+  color:#111 !important;
+  border-color:#fdba74 !important;
+}
+
+/* v15.1 サイドチェンジボタン */
+.side-change-play-btn-v151,
+.side-change-library-btn-v151{
+  width:30px !important;
+  height:30px !important;
+  min-width:30px !important;
+  padding:0 !important;
+  border-radius:9px !important;
+  font-size:15px !important;
+  line-height:1 !important;
+  background:rgba(23,100,255,.18) !important;
+  color:#dbeafe !important;
+  border:1px solid rgba(96,165,250,.45) !important;
+  display:grid !important;
+  place-items:center !important;
+}
+.side-change-play-btn-v151:hover,
+.side-change-library-btn-v151:hover{
+  background:#1764ff !important;
+  color:#fff !important;
+  border-color:#60a5fa !important;
+}
+.saved-play-wrap:has(.side-change-play-btn-v151){
+  grid-template-columns:32px minmax(0,1fr) 30px 30px 30px !important;
+  gap:5px !important;
+}
+.library-item:has(.side-change-library-btn-v151){
+  grid-template-columns:minmax(0,1fr) 30px 30px 30px 30px !important;
+  gap:5px !important;
+}
+
+/* v15.2 サイドチェンジ一時表示 */
+.side-toggle-selected-v152{
+  margin-top:10px;
+  width:100%;
+  height:34px;
+  padding:0 10px !important;
+  border-radius:999px !important;
+  font-size:12px !important;
+  background:rgba(23,100,255,.16) !important;
+  border:1px solid rgba(96,165,250,.45) !important;
+  color:#dbeafe !important;
+}
+.side-toggle-selected-v152.side-active-v152,
+.side-change-play-btn-v151.side-active-v152,
+.side-change-library-btn-v151.side-active-v152{
+  background:#f4b43a !important;
+  color:#111 !important;
+  border-color:#f4b43a !important;
+  box-shadow:0 0 0 2px rgba(244,180,58,.24);
+}
+
+
+/* v15.3 サイドチェンジ表示を整理：名前には付けず、NORMAL/SIDEバッジで表示 */
+#selectedPlayPanelV125{
+  position:relative;
+  padding-bottom:12px !important;
+}
+#selectedPlayTitleV125{
+  padding-right:70px;
+}
+.side-mode-badge-v153{
+  position:absolute;
+  top:12px;
+  right:12px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:58px;
+  height:24px;
+  padding:0 10px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:1000;
+  letter-spacing:.08em;
+  border:1px solid rgba(255,255,255,.18);
+}
+.side-mode-badge-v153.normal{
+  color:#dbeafe;
+  background:rgba(37,99,235,.2);
+  border-color:rgba(96,165,250,.35);
+}
+.side-mode-badge-v153.side{
+  color:#111;
+  background:#f4b43a;
+  border-color:#f4b43a;
+  box-shadow:0 0 0 3px rgba(244,180,58,.18);
+}
+.side-toggle-selected-v152{
+  margin-top:10px !important;
+  height:42px !important;
+  border-radius:999px !important;
+  font-size:14px !important;
+}
+.selected-play-source{
+  color:#9fb0c7 !important;
+}
