@@ -2103,3 +2103,45 @@ button{
 @media(max-width:760px){
   .export-controls{grid-template-columns:1fr 1fr !important;}
 }
+
+/* v17.3 スペーシング測定ボタン */
+.spacing-measure-btn-v173{
+  position:absolute;
+  z-index:45;
+  right:182px;
+  bottom:14px;
+  width:44px;
+  height:44px;
+  min-width:44px;
+  padding:0 !important;
+  border-radius:999px !important;
+  background:rgba(12,17,23,.86) !important;
+  color:#fff !important;
+  border:1px solid rgba(255,255,255,.22) !important;
+  box-shadow:0 10px 24px rgba(0,0,0,.35);
+  backdrop-filter:blur(8px);
+  font-size:19px !important;
+  display:grid;
+  place-items:center;
+}
+.spacing-measure-btn-v173.active{
+  background:#f4b43a !important;
+  color:#111 !important;
+  border-color:#f4b43a !important;
+  box-shadow:0 0 0 4px rgba(244,180,58,.26), 0 10px 24px rgba(0,0,0,.35);
+}
+.spacing-measure-btn-v173:disabled{
+  opacity:.35;
+  filter:grayscale(.4);
+  cursor:not-allowed;
+}
+@media(max-width:1000px){
+  .spacing-measure-btn-v173{
+    bottom:10px !important;
+    right:166px !important;
+    width:40px !important;
+    height:40px !important;
+    min-width:40px !important;
+    font-size:17px !important;
+  }
+}

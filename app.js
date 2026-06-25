@@ -6103,3 +6103,260 @@ setTimeout(()=>{
     }
   },3200);
 })();
+
+/* v17.2 記録中だけ動作アイコン表示
+   - スタート前は初期配置調整だけに集中できるよう、移動/ドライブ/パス/シュート/スクリーンの選択アイコンを出さない
+   - スタート後だけ、選手/ボールを動かした時に選択アイコンを表示
+   - 完了後はアイコンを閉じる
+   - 他機能は変更なし
+*/
+(function(){
+  const oldShowChoiceV172 = typeof showChoice === 'function' ? showChoice : null;
+  showChoice = function(id, clientX, clientY){
+    if(!isRecording){
+      try{ hideChoices(); }catch(e){}
+      return;
+    }
+    if(oldShowChoiceV172) return oldShowChoiceV172.call(this, id, clientX, clientY);
+  };
+
+  if(typeof finishPlay === 'function'){
+    const oldFinishPlayV172 = finishPlay;
+    finishPlay = function(){
+      const result = oldFinishPlayV172.apply(this, arguments);
+      try{ hideChoices(); }catch(e){}
+      return result;
+    };
+    const finishBtn = document.getElementById('finishPlayBtn');
+    if(finishBtn) finishBtn.onclick = finishPlay;
+  }
+
+  if(typeof startPlay === 'function'){
+    const oldStartPlayV172 = startPlay;
+    startPlay = function(){
+      try{ hideChoices(); }catch(e){}
+      return oldStartPlayV172.apply(this, arguments);
+    };
+    const startBtn = document.getElementById('startPlayBtn');
+    if(startBtn) startBtn.onclick = startPlay;
+  }
+
+  setTimeout(()=>{
+    try{
+      const status = document.getElementById('exportStatusV120');
+      if(status) status.textContent = 'v17.2：スタート前は初期配置モード。スタート後だけ移動/ドライブ/パス等の選択アイコンを表示します。';
+    }catch(e){}
+  }, 3200);
+})();
+
+/* v17.3 スペーシング測定モード
+   - スタート前だけ有効
+   - 📏ボタンでON/OFF
+   - 選手間距離をコート縮尺からメートル表示
+   - 近すぎ/適正/広いを色で見やすく表示
+   - 記録中・再生中の動きには干渉しない
+*/
+(function(){
+  let spacingMeasureOnV173 = false;
+
+  function meterPerPixelV173(){
+    // 既存コートサイズは 50px = 1m になるよう作られている
+    // half: 750px×700px ≒ 15m×14m / full: 1400px×750px ≒ 28m×15m
+    return 0.02;
+  }
+
+  function distanceColorV173(m){
+    if(m < 2.0) return '#ef4444';      // 近すぎ
+    if(m < 4.0) return '#f4b43a';      // やや狭い
+    if(m <= 5.5) return '#22c55e';     // 理想
+    return '#38bdf8';                  // 広い
+  }
+
+  function distanceTextV173(m){
+    if(m < 2.0) return `${m.toFixed(1)}m 近い`;
+    if(m < 4.0) return `${m.toFixed(1)}m`;
+    if(m <= 5.5) return `${m.toFixed(1)}m 理想`;
+    return `${m.toFixed(1)}m`;
+  }
+
+  function offensePlayersV173(){
+    try{ return objects.filter(o=>o && o.t === 'o'); }catch(e){ return []; }
+  }
+
+  function selectedOffenseV173(players){
+    return players.find(o=>String(o.id) === String(selectedId));
+  }
+
+  function drawDistanceLineV173(a,b,emphasis=false){
+    const dx=b.x-a.x, dy=b.y-a.y;
+    const pxDist=Math.hypot(dx,dy);
+    if(pxDist < 1) return;
+    const meters = pxDist * meterPerPixelV173();
+    const col = distanceColorV173(meters);
+    const midX=(a.x+b.x)/2, midY=(a.y+b.y)/2;
+    const ang=Math.atan2(dy,dx);
+    const nx=-Math.sin(ang), ny=Math.cos(ang);
+
+    ctx.save();
+    ctx.globalAlpha = emphasis ? 0.96 : 0.72;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = emphasis ? 4 : 3;
+    ctx.setLineDash([10,7]);
+    ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(a.x,a.y);
+    ctx.lineTo(b.x,b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 両端に定規っぽい小さい目盛り
+    ctx.lineWidth = emphasis ? 3 : 2;
+    [[a.x,a.y],[b.x,b.y]].forEach(p=>{
+      ctx.beginPath();
+      ctx.moveTo(p[0]+nx*10,p[1]+ny*10);
+      ctx.lineTo(p[0]-nx*10,p[1]-ny*10);
+      ctx.stroke();
+    });
+
+    // ラベル背景
+    const label = distanceTextV173(meters);
+    ctx.font = emphasis ? '900 18px system-ui' : '900 15px system-ui';
+    const tw = ctx.measureText(label).width;
+    const lx = midX + nx*22;
+    const ly = midY + ny*22;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle='rgba(6,16,29,.90)';
+    ctx.strokeStyle=col;
+    ctx.lineWidth=2;
+    const padX=9, padY=6, h=emphasis?30:26;
+    const x=lx-tw/2-padX, y=ly-h/2;
+    ctx.beginPath();
+    if(ctx.roundRect){ ctx.roundRect(x,y,tw+padX*2,h,12); }
+    else { ctx.rect(x,y,tw+padX*2,h); }
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#fff';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillText(label,lx,ly+1);
+    ctx.restore();
+  }
+
+  function drawSpacingOverlayV173(){
+    if(!spacingMeasureOnV173 || isRecording || savedPlayback) return;
+    const players = offensePlayersV173();
+    if(players.length < 2) return;
+
+    const selected = selectedOffenseV173(players);
+    const drawn = new Set();
+
+    // 選択中の選手がいる時は、その選手から全員への距離を表示
+    if(selected){
+      players.forEach(p=>{
+        if(p === selected) return;
+        drawDistanceLineV173(selected,p,true);
+      });
+    }else{
+      // 未選択時は各選手の一番近い相手だけ表示して、画面をゴチャつかせない
+      players.forEach(a=>{
+        let best=null, bestD=Infinity;
+        players.forEach(b=>{
+          if(a===b) return;
+          const d=Math.hypot(a.x-b.x,a.y-b.y);
+          if(d<bestD){ bestD=d; best=b; }
+        });
+        if(best){
+          const key=[String(a.id),String(best.id)].sort().join('-');
+          if(!drawn.has(key)){
+            drawn.add(key);
+            drawDistanceLineV173(a,best,false);
+          }
+        }
+      });
+    }
+
+    // 右上に簡易凡例
+    ctx.save();
+    ctx.font='900 13px system-ui';
+    const text='📏 スペーシング測定  2m未満=近い / 4〜5.5m=理想';
+    const tw=ctx.measureText(text).width;
+    ctx.fillStyle='rgba(6,16,29,.84)';
+    ctx.strokeStyle='rgba(255,255,255,.18)';
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    const x=canvas.width-tw-30, y=16, w=tw+18, h=30;
+    if(ctx.roundRect){ ctx.roundRect(x,y,w,h,999); } else { ctx.rect(x,y,w,h); }
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#fff';
+    ctx.textAlign='left';
+    ctx.textBaseline='middle';
+    ctx.fillText(text,x+9,y+h/2+1);
+    ctx.restore();
+  }
+
+  const oldRenderV173 = typeof render === 'function' ? render : null;
+  if(oldRenderV173 && !oldRenderV173.__spacingMeasureV173){
+    render = function(){
+      const r = oldRenderV173.apply(this, arguments);
+      try{ drawSpacingOverlayV173(); }catch(e){}
+      return r;
+    };
+    render.__spacingMeasureV173 = true;
+  }
+
+  function syncSpacingBtnV173(){
+    const btn=document.getElementById('spacingMeasureBtnV173');
+    if(!btn) return;
+    btn.classList.toggle('active', spacingMeasureOnV173 && !isRecording);
+    btn.disabled = !!isRecording;
+    btn.title = isRecording ? '記録中は測定OFF' : 'スペーシング測定';
+  }
+
+  function ensureSpacingBtnV173(){
+    if(document.getElementById('spacingMeasureBtnV173')) return;
+    const area=document.getElementById('courtArea');
+    if(!area) return;
+    const btn=document.createElement('button');
+    btn.id='spacingMeasureBtnV173';
+    btn.className='spacing-measure-btn-v173';
+    btn.type='button';
+    btn.textContent='📏';
+    btn.title='スペーシング測定';
+    btn.onclick=()=>{
+      if(isRecording){ spacingMeasureOnV173=false; syncSpacingBtnV173(); render(); return; }
+      spacingMeasureOnV173=!spacingMeasureOnV173;
+      syncSpacingBtnV173();
+      render();
+    };
+    area.appendChild(btn);
+    syncSpacingBtnV173();
+  }
+
+  // スタートしたら自動OFF。完了後は再度ON可能
+  if(typeof startPlay === 'function'){
+    const oldStartV173 = startPlay;
+    startPlay = function(){
+      spacingMeasureOnV173=false;
+      syncSpacingBtnV173();
+      return oldStartV173.apply(this, arguments);
+    };
+    const b=document.getElementById('startPlayBtn');
+    if(b) b.onclick=startPlay;
+  }
+  if(typeof finishPlay === 'function'){
+    const oldFinishV173 = finishPlay;
+    finishPlay = function(){
+      const r=oldFinishV173.apply(this, arguments);
+      setTimeout(syncSpacingBtnV173,60);
+      return r;
+    };
+    const b=document.getElementById('finishPlayBtn');
+    if(b) b.onclick=finishPlay;
+  }
+
+  setTimeout(()=>{
+    ensureSpacingBtnV173();
+    try{ render(); }catch(e){}
+    const status=document.getElementById('exportStatusV120');
+    if(status) status.textContent='v17.3：スタート前だけ📏スペーシング測定。選手間の距離をメートルで表示します。';
+  },900);
+})();
