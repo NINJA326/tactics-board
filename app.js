@@ -6159,10 +6159,29 @@ setTimeout(()=>{
 (function(){
   let spacingMeasureOnV173 = false;
 
-  function meterPerPixelV173(){
-    // 既存コートサイズは 50px = 1m になるよう作られている
-    // half: 750px×700px ≒ 15m×14m / full: 1400px×750px ≒ 28m×15m
-    return 0.02;
+  function courtMetersV174(){
+    // v17.5: キャンバス全体ではなく、実際の白いコート外枠内で換算する。
+    // ハーフ: 横15m × 縦14m
+    // オール: 横向き表示なので 画面X=28m / 画面Y=15m
+    if(mode === 'half') return {w:15, h:14};
+    return {w:28, h:15};
+  }
+
+  function courtBoundsPxV175(){
+    // コート画像の白線外枠を基準にした実測ピクセル範囲。
+    // 選手マークの中心が左外枠〜右外枠にある時、ハーフは正確に15mになる。
+    if(mode === 'half') return {left:40, right:717, top:38, bottom:686};
+    return {left:65, right:1346, top:50, bottom:703};
+  }
+
+  function distanceMetersV174(a,b){
+    const size = courtMetersV174();
+    const bounds = courtBoundsPxV175();
+    const courtW = Math.max(1, bounds.right - bounds.left);
+    const courtH = Math.max(1, bounds.bottom - bounds.top);
+    const mx = (b.x - a.x) * (size.w / courtW);
+    const my = (b.y - a.y) * (size.h / courtH);
+    return Math.hypot(mx,my);
   }
 
   function distanceColorV173(m){
@@ -6191,7 +6210,7 @@ setTimeout(()=>{
     const dx=b.x-a.x, dy=b.y-a.y;
     const pxDist=Math.hypot(dx,dy);
     if(pxDist < 1) return;
-    const meters = pxDist * meterPerPixelV173();
+    const meters = distanceMetersV174(a,b);
     const col = distanceColorV173(meters);
     const midX=(a.x+b.x)/2, midY=(a.y+b.y)/2;
     const ang=Math.atan2(dy,dx);
@@ -6277,7 +6296,7 @@ setTimeout(()=>{
     // 右上に簡易凡例
     ctx.save();
     ctx.font='900 13px system-ui';
-    const text='📏 スペーシング測定  2m未満=近い / 4〜5.5m=理想';
+    const text='📏 中心間距離  白線外枠基準：ハーフ15×14m / オール28×15m';
     const tw=ctx.measureText(text).width;
     ctx.fillStyle='rgba(6,16,29,.84)';
     ctx.strokeStyle='rgba(255,255,255,.18)';
@@ -6357,6 +6376,6 @@ setTimeout(()=>{
     ensureSpacingBtnV173();
     try{ render(); }catch(e){}
     const status=document.getElementById('exportStatusV120');
-    if(status) status.textContent='v17.3：スタート前だけ📏スペーシング測定。選手間の距離をメートルで表示します。';
+    if(status) status.textContent='v17.5：白線外枠を基準に距離測定。ハーフ横15m/縦14m、オール横28m/縦15mで換算します。';
   },900);
 })();
