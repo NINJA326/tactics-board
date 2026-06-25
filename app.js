@@ -5789,3 +5789,317 @@ setTimeout(()=>{
   setTimeout(wireV154, 2200);
   window.TacticsShareV154 = {openMenu:openMenuV154, line:actionLineV154};
 })();
+
+/* v17.0 販売版：LINE/保存/コピー共有ワークフロー整理
+   - Web/PWAの制約に合わせて、Macは「保存→LINEへドラッグ」、スマホは「共有シート」を中心に安定化
+   - 画像はクリップボードコピー対応。動画は保存後にLINEへ添付する導線へ整理
+   - 既存の作成・再生・保存・DF・スペース・スクリーン機能は変更しない
+*/
+(function(){
+  function $v170(id){return document.getElementById(id);}
+  function currentTitleV170(){
+    try{
+      const t=$v170('selectedPlayTitleV125');
+      if(t && t.textContent && !/未選択/.test(t.textContent)) return t.textContent.trim();
+    }catch(e){}
+    try{ if(typeof getExportTitleInfoV136==='function') return getExportTitleInfoV136().title || 'Tactics Board'; }catch(e){}
+    return 'Tactics Board';
+  }
+  function safeNameV170(base, ext){
+    let name = base || currentTitleV170() || 'tactics-board';
+    try{ if(typeof safeFileNameV126==='function') name = safeFileNameV126(name); }
+    catch(e){ name = String(name).replace(/[\\/:*?"<>|]/g,'_'); }
+    return `${name || 'tactics-board'}_${typeof timestampV120==='function'?timestampV120():Date.now()}.${ext}`;
+  }
+  function setStatusV170(msg){ try{ if(typeof setExportStatusV120==='function') setExportStatusV120(msg); }catch(e){} }
+  async function imageBlobV170(){
+    if(typeof titledImageBlobV136 === 'function') return await titledImageBlobV136('image/png');
+    if(typeof exportCanvasToBlobV121 === 'function') return await exportCanvasToBlobV121('image/png');
+    if(typeof canvasToBlobV120 === 'function') return await canvasToBlobV120('image/png');
+    return await new Promise((res,rej)=>canvas.toBlob(b=>b?res(b):rej(new Error('画像作成失敗')),'image/png'));
+  }
+  async function saveImageOnlyV170(){
+    const blob = await imageBlobV170();
+    const name = safeNameV170(currentTitleV170(),'png');
+    try{ lastExportBlobV120 = blob; lastExportFileNameV120 = name; }catch(e){}
+    if(typeof downloadBlobV120 === 'function') downloadBlobV120(blob,name);
+    setStatusV170(`画像を保存しました：${name}　MacはダウンロードからLINEへドラッグ、スマホは共有/写真保存で送れます。`);
+    return {blob,name};
+  }
+  async function copyImageV170(){
+    const blob = await imageBlobV170();
+    if(navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+      try{ lastExportBlobV120=blob; lastExportFileNameV120=safeNameV170(currentTitleV170(),'png'); }catch(e){}
+      setStatusV170('画像をコピーしました。LINEのトーク画面で貼り付けできます。');
+      return true;
+    }
+    if(navigator.clipboard){
+      await navigator.clipboard.writeText(currentTitleV170());
+      setStatusV170('画像コピー非対応のため、プレー名をコピーしました。画像保存を使ってください。');
+      return false;
+    }
+    throw new Error('コピー非対応');
+  }
+  async function nativeShareImageV170(){
+    const blob = await imageBlobV170();
+    const name = safeNameV170(currentTitleV170(),'png');
+    const file = new File([blob],name,{type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:currentTitleV170(), text:'作戦ボード'});
+      setStatusV170('共有シートを開きました。LINEが表示される場合はLINEを選んで送信できます。');
+      return true;
+    }
+    if(navigator.share){
+      await navigator.share({title:currentTitleV170(), text:'作戦ボード'});
+      setStatusV170('共有シートを開きました。ファイル非対応の場合は画像保存を使ってください。');
+      return true;
+    }
+    return false;
+  }
+  function openLineAppV170(){
+    // WebからLINEアプリを完全制御することはできないため、起動できる環境のみ起動。
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const url = (isIOS || isAndroid) ? 'line://' : 'line://';
+    try{ window.location.href = url; }catch(e){}
+  }
+  async function saveVideoOnlyV170(){
+    if(typeof saveVideoV137 === 'function'){
+      await saveVideoV137();
+      setStatusV170('動画を書き出しました。MacはダウンロードからLINEへドラッグ、スマホは写真/ファイルからLINEへ添付してください。');
+      return true;
+    }
+    if(typeof saveVideoV126 === 'function'){
+      await saveVideoV126();
+      setStatusV170('動画を書き出しました。LINEへ添付してください。');
+      return true;
+    }
+    alert('動画保存機能が見つかりません。');
+    return false;
+  }
+  function showResultV170(html){
+    const r=$v170('lineHelperResultV170');
+    if(!r) return;
+    r.innerHTML=html;
+    r.classList.add('show');
+  }
+  function closePanelV170(){ const p=$v170('lineHelperV170'); if(p) p.classList.remove('open'); }
+  function openPanelV170(){
+    installPanelV170();
+    const p=$v170('lineHelperV170');
+    const sel=$v170('lineHelperSelectedV170');
+    if(sel) sel.textContent = `選択中：${currentTitleV170()}`;
+    const r=$v170('lineHelperResultV170'); if(r){r.classList.remove('show'); r.innerHTML='';}
+    if(p) p.classList.add('open');
+  }
+  function optionV170(cls,strong,sub,fn){
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='line-helper-action-v170 '+cls;
+    b.innerHTML=`<strong>${strong}</strong><span>${sub}</span>`;
+    b.onclick=async()=>{
+      try{ await fn(); }
+      catch(err){ console.error(err); alert('処理に失敗しました。画像保存または動画保存を試してください。'); }
+    };
+    return b;
+  }
+  function installPanelV170(){
+    if($v170('lineHelperV170')) return;
+    const back=document.createElement('div');
+    back.id='lineHelperV170';
+    back.className='line-helper-backdrop-v170';
+    back.innerHTML=`
+      <div class="line-helper-panel-v170" role="dialog" aria-modal="true">
+        <div class="line-helper-head-v170">
+          <div class="line-helper-title-v170">💬 LINEへ送る</div>
+          <button type="button" class="line-helper-close-v170" aria-label="閉じる">×</button>
+        </div>
+        <div id="lineHelperSelectedV170" class="line-helper-selected-v170">選択中：Tactics Board</div>
+        <div class="line-helper-grid-v170"></div>
+        <div id="lineHelperResultV170" class="line-helper-result-v170"></div>
+        <p class="line-helper-note-v170">Macはブラウザ制限でLINEへ完全自動添付できません。最も安定する方法は「保存→ダウンロードからLINEへドラッグ」です。iPhone/Androidは共有シートにLINEが出れば直接送信できます。</p>
+      </div>`;
+    document.body.appendChild(back);
+    const grid=back.querySelector('.line-helper-grid-v170');
+    grid.appendChild(optionV170('copy','📋 画像をコピーしてLINE','コピー後、LINEのトーク画面で貼り付け',async()=>{
+      await copyImageV170();
+      showResultV170('✅ 画像をコピーしました。LINEを開いてトーク画面に貼り付けてください。<br>Mac：⌘V / iPhone：長押しペースト');
+      setTimeout(openLineAppV170,250);
+    }));
+    grid.appendChild(optionV170('primary','📷 画像保存 → LINE','画像を保存してからLINEへ添付/ドラッグ',async()=>{
+      const out=await saveImageOnlyV170();
+      showResultV170(`✅ 画像を保存しました：${out.name}<br>Mac：ダウンロードからLINEへドラッグしてください。<br>スマホ：写真/ファイルからLINEへ送信してください。`);
+      setTimeout(openLineAppV170,250);
+    }));
+    grid.appendChild(optionV170('video','🎥 動画保存 → LINE','動画を書き出してからLINEへ添付/ドラッグ',async()=>{
+      await saveVideoOnlyV170();
+      showResultV170('✅ 動画を書き出しました。MacはダウンロードからLINEへドラッグ、スマホは写真/ファイルからLINEへ添付してください。');
+      setTimeout(openLineAppV170,250);
+    }));
+    grid.appendChild(optionV170('native','📤 共有シートで送る','iPhone/AndroidでLINEが表示される場合に使用',async()=>{
+      const ok=await nativeShareImageV170();
+      if(ok) showResultV170('✅ 共有シートを開きました。LINEが表示された場合はLINEを選んでください。');
+      else showResultV170('共有シートが使えませんでした。画像保存 → LINE添付を使ってください。');
+    }));
+    grid.appendChild(optionV170('primary','💬 LINEだけ開く','保存済み画像/動画を手動で送る',async()=>{
+      openLineAppV170();
+      showResultV170('LINEを開きます。保存済みの画像/動画を選んで送信してください。');
+    }));
+    back.querySelector('.line-helper-close-v170').onclick=closePanelV170;
+    back.addEventListener('click',e=>{if(e.target===back) closePanelV170();});
+  }
+  function installCopyButtonV170(){
+    const controls=document.querySelector('.export-controls');
+    if(!controls) return;
+    // 既存LINEボタンをv17の案内パネルへ差し替え
+    let lineBtn=$v170('lineShareBtnV154');
+    if(!lineBtn){
+      lineBtn=document.createElement('button');
+      lineBtn.id='lineShareBtnV154';
+      lineBtn.type='button';
+      lineBtn.className='export-btn line-v170';
+      controls.appendChild(lineBtn);
+    }
+    lineBtn.classList.add('line-v170');
+    lineBtn.textContent='LINE';
+    lineBtn.onclick=(e)=>{e.preventDefault(); openPanelV170();};
+    // 画像コピーボタン
+    if(!$v170('copyImageBtnV170')){
+      const c=document.createElement('button');
+      c.id='copyImageBtnV170';
+      c.type='button';
+      c.className='export-btn copy-v170';
+      c.textContent='コピー';
+      c.title='画像をコピーしてLINEやメールに貼り付け';
+      c.onclick=async()=>{try{await copyImageV170();}catch(e){alert('コピーに失敗しました。画像保存を使ってください。');}};
+      // LINEの直前に挿入して並びを 画像/動画/コピー/共有/LINE にする
+      controls.insertBefore(c, lineBtn);
+    }
+  }
+  function wireShareMenuV170(){
+    installPanelV170();
+    installCopyButtonV170();
+    const share=$v170('sharePlayBtnV120');
+    if(share){
+      share.onclick=(e)=>{e.preventDefault(); openPanelV170();};
+    }
+    setStatusV170('v17.0：販売版共有導線を整理。画像コピー、画像保存→LINE、動画保存→LINE、共有シートを使い分けできます。');
+  }
+  setTimeout(wireShareMenuV170,2600);
+  window.TacticsShareV170={open:openPanelV170, saveImage:saveImageOnlyV170, saveVideo:saveVideoOnlyV170, copyImage:copyImageV170};
+})();
+
+/* v17.1 選択中プレー共有の統一
+   - 保存プレー/ムーブライブラリで選択中のプレーを、画像保存・コピー・共有・LINE導線すべての対象にする
+   - 動画保存は既存の選択中プレー録画を維持
+   - 他の作成/再生/編集機能は変更しない
+*/
+(function(){
+  function cloneV171(x){ try{return JSON.parse(JSON.stringify(x));}catch(e){return x;} }
+  function selectedPlayForShareV171(){
+    try{
+      if(typeof selectedPlayDataV126 !== 'undefined' && selectedPlayDataV126 && selectedPlayDataV126.frames && selectedPlayDataV126.frames.length){
+        return cloneV171(selectedPlayDataV126);
+      }
+    }catch(e){}
+    try{
+      if(typeof getSelectedPlayForExportV126 === 'function'){
+        const p = getSelectedPlayForExportV126();
+        if(p && p.frames && p.frames.length) return cloneV171(p);
+      }
+    }catch(e){}
+    return null;
+  }
+  function selectedSnapshotForShareV171(){
+    const p = selectedPlayForShareV171();
+    if(p && p.frames && p.frames.length){
+      // 画像/コピー/共有は、プレー全体が分かる最終フレームを使う
+      return cloneV171(p.frames[p.frames.length - 1]);
+    }
+    try{
+      if(typeof currentSnapshotV121 === 'function') return currentSnapshotV121();
+    }catch(e){}
+    return {objects:cloneV171(objects||[]), lines:cloneV171(lines||[])};
+  }
+  function selectedTitleInfoV171(){
+    const p = selectedPlayForShareV171();
+    const title = (p && p.title)
+      || (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.title)
+      || (typeof selectedPlayDataV126 !== 'undefined' && selectedPlayDataV126 && selectedPlayDataV126.title)
+      || 'Tactics Board';
+    const source = (typeof selectedPlayV125 !== 'undefined' && selectedPlayV125 && selectedPlayV125.source)
+      || (typeof selectedPlaySourceV126 !== 'undefined' && selectedPlaySourceV126)
+      || '選択中プレー';
+    const m = (p && p.mode) || (typeof selectedModeV126 === 'function' ? selectedModeV126() : mode) || mode || 'half';
+    return {title, source, mode:m};
+  }
+
+  // 既存のタイトル情報・画像生成を、選択中プレー基準に差し替え
+  getExportTitleInfoV136 = function(){
+    return selectedTitleInfoV171();
+  };
+
+  renderCurrentTitledImageCanvasV136 = function(){
+    const info = selectedTitleInfoV171();
+    const snap = selectedSnapshotForShareV171();
+    if(typeof renderSnapshotToExportVideoCanvasV134 === 'function'){
+      return renderSnapshotToExportVideoCanvasV134(snap, true, info.mode, info.title, info.source, playbackStateV115?.speed || 1);
+    }
+    if(typeof renderSnapshotToExportCanvasV126 === 'function'){
+      return renderSnapshotToExportCanvasV126(snap, true, info.mode);
+    }
+    if(typeof renderSnapshotToExportCanvasV121 === 'function'){
+      return renderSnapshotToExportCanvasV121(snap, true);
+    }
+    return canvas;
+  };
+
+  function updateShareSelectedLabelV171(){
+    const info = selectedTitleInfoV171();
+    const helper = document.getElementById('lineHelperSelectedV170');
+    if(helper) helper.textContent = `選択中：${info.title}（${info.source}）`;
+    const status = document.getElementById('exportStatusV120');
+    if(status && !/作成中|保存しました|コピーしました|共有/.test(status.textContent||'')){
+      status.textContent = `選択中の「${info.title}」を画像保存・動画保存・コピー・共有・LINE送信できます。`;
+    }
+  }
+
+  // パネルを開く直前にも選択中名を更新
+  if(window.TacticsShareV170 && typeof window.TacticsShareV170.open === 'function'){
+    const oldOpen = window.TacticsShareV170.open;
+    window.TacticsShareV170.open = function(){
+      const r = oldOpen.apply(this, arguments);
+      setTimeout(updateShareSelectedLabelV171,0);
+      setTimeout(updateShareSelectedLabelV171,120);
+      return r;
+    };
+  }
+
+  // 既存の選択/表示更新後にもステータスを合わせる
+  const wrapV171 = (name)=>{
+    try{
+      const oldFn = eval('typeof '+name+' !== "undefined" ? '+name+' : null');
+      if(typeof oldFn !== 'function' || oldFn.__shareSelectedV171) return;
+      const wrapped = function(...args){
+        const res = oldFn.apply(this,args);
+        setTimeout(updateShareSelectedLabelV171,80);
+        return res;
+      };
+      wrapped.__shareSelectedV171 = true;
+      eval(name + ' = wrapped');
+    }catch(e){}
+  };
+  wrapV171('rememberSelectedPlayV126');
+  wrapV171('playSaved');
+  wrapV171('loadLibraryPlayV118');
+  wrapV171('updateSelectedPlayPanelV125');
+
+  setTimeout(()=>{
+    updateShareSelectedLabelV171();
+    if(typeof setExportStatusV120 === 'function'){
+      const info = selectedTitleInfoV171();
+      setExportStatusV120(`v17.1：保存プレー/ムーブライブラリで選択中の「${info.title}」をコピー・保存・動画・LINE送信の対象にします。`);
+    }
+  },3200);
+})();
