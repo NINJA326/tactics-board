@@ -6379,3 +6379,785 @@ setTimeout(()=>{
     if(status) status.textContent='v17.5：白線外枠を基準に距離測定。ハーフ横15m/縦14m、オール横28m/縦15mで換算します。';
   },900);
 })();
+
+/* v19.0 Help Defense AI 強化
+   - DボタンON時の表示専用DFを強化
+   - ボールマン / ギャップ / ヘルプサイド / ドライブヘルプ / ローテーションを自動配置
+   - 保存データ本体・他機能は変更なし
+*/
+(function(){
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function dist(a,b){ return Math.hypot((a.x||0)-(b.x||0),(a.y||0)-(b.y||0)); }
+  function lerp(a,b,t){ return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t}; }
+  function norm(dx,dy){ const l=Math.hypot(dx,dy)||1; return {x:dx/l,y:dy/l}; }
+  function bounds(cm){ return cm==='half' ? {w:750,h:700} : {w:1400,h:750}; }
+  function hoopForPoint(p,cm){
+    if(cm==='half') return {x:375,y:78};
+    return (p.x < 700) ? {x:78,y:375} : {x:1322,y:375};
+  }
+  function paintAnchor(p,cm){
+    if(cm==='half') return {x:375,y:215};
+    return (p.x < 700) ? {x:205,y:375} : {x:1195,y:375};
+  }
+  function splitLineX(p,cm){ return cm==='half' ? 375 : (p.x < 700 ? 350 : 1050); }
+  function sideSignToMiddle(p,cm){
+    const sx = splitLineX(p,cm);
+    return p.x < sx ? 1 : -1;
+  }
+  function pointLineDistance(p,a,b){
+    const vx=b.x-a.x, vy=b.y-a.y, wx=p.x-a.x, wy=p.y-a.y;
+    const len2=vx*vx+vy*vy || 1;
+    const t=clamp((wx*vx+wy*vy)/len2,0,1);
+    const q={x:a.x+vx*t,y:a.y+vy*t};
+    return {d:dist(p,q), q, t};
+  }
+  function getLastDriveInfo(src, ballOwner){
+    const ls = (lines || []).filter(l=>l && !l.hidden);
+    const lastDrive = [...ls].reverse().find(l=>l.k==='drive' && l.moveRef && ballOwner && String(l.moveRef.id)===String(ballOwner.id));
+    if(!lastDrive) return null;
+    return {from:{x:lastDrive.x1,y:lastDrive.y1}, to:{x:lastDrive.x2,y:lastDrive.y2}, line:lastDrive};
+  }
+  function roleOffset(base, player, idx, cm){
+    const hp=hoopForPoint(player,cm);
+    const n=norm(hp.x-player.x,hp.y-player.y);
+    const side = (Number(player.id||idx+1)%2===0) ? 1 : -1;
+    const mag = 14 + (idx%3)*5;
+    return {x:base.x + (-n.y*mag*side), y:base.y + (n.x*mag*side)};
+  }
+  function laneScore(player, ball, hoop){
+    if(!ball) return 9999;
+    const lane = pointLineDistance(player, ball, hoop);
+    return dist(player,ball) + lane.d*0.72;
+  }
+  function offBallRole(player, ball, hoop, cm){
+    if(!ball) return 'help';
+    const dBall = dist(player, ball);
+    const score = laneScore(player, ball, hoop);
+    if(dBall < 260 || score < 330) return 'gap';
+    if(dBall < 430 || score < 520) return 'deny';
+    return 'help';
+  }
+  function enhancedDefense(sourceObjects, cm){
+    const src = (sourceObjects || []).filter(o=>o && o.t!=='d');
+    const ball = src.find(o=>o.t==='b');
+    const players = src.filter(o=>o.t==='o');
+    if(!players.length) return [];
+    const b=bounds(cm);
+    const ballOwner = ball ? players.slice().sort((a,bb)=>dist(a,ball)-dist(bb,ball))[0] : players[0];
+    const mainHoop = hoopForPoint(ballOwner || players[0], cm);
+    const driveInfo = getLastDriveInfo(src, ballOwner);
+    const ballNearOwner = ball && ballOwner && dist(ball, ballOwner) < 90;
+    const inAttackArea = ballOwner && dist(ballOwner, mainHoop) < (cm==='half' ? 420 : 520);
+    const driving = !!driveInfo || (ballNearOwner && inAttackArea);
+
+    const helpTargets = [];
+    let raw = players.map((p,idx)=>{
+      const hoop = hoopForPoint(p, cm);
+      const paint = paintAnchor(p, cm);
+      const id = 'X' + p.id;
+      let target, role='HELP';
+
+      if(ballOwner && String(p.id)===String(ballOwner.id)){
+        // ON BALL: ゴールとボールの間に入り、少しミドル側を切る
+        const containDepth = dist(p, hoop) < 230 ? 0.20 : 0.24;
+        target = ball ? lerp(ball, hoop, containDepth) : lerp(p, hoop, 0.22);
+        const middleDir = sideSignToMiddle(p,cm);
+        target.x += middleDir * 12;
+        role = 'BALL';
+      }else{
+        const r = offBallRole(p, ball, mainHoop, cm);
+        role = r.toUpperCase();
+        if(r==='gap'){
+          // 1パスアウェイ：ボールとマークマンの中間から少しリング寄り、ギャップを消す
+          const between = ball ? lerp(p, ball, 0.40) : lerp(p, hoop, 0.25);
+          target = lerp(between, hoop, 0.13);
+        }else if(r==='deny'){
+          // ボールサイドだが少し遠い：パスレーンを見せない位置
+          const between = ball ? lerp(p, ball, 0.30) : lerp(p, hoop, 0.25);
+          target = lerp(between, hoop, 0.20);
+        }else{
+          // ヘルプサイド：スプリットライン・ペイント寄りに沈む
+          const sx = splitLineX(p,cm);
+          const splitPoint = {x:sx, y: cm==='half' ? clamp(p.y,160,510) : clamp(p.y,170,580)};
+          target = lerp(lerp(paint, splitPoint, 0.56), p, 0.14);
+        }
+
+        if(driving && ballOwner){
+          const driveStop = driveInfo ? lerp(driveInfo.to, mainHoop, 0.18) : lerp(ballOwner, mainHoop, 0.42);
+          const pd = pointLineDistance(p, ballOwner, mainHoop);
+          // 近いDFはヘルプで壁を作る。遠いDFはローテーションでペイント側へ。
+          if(pd.d < 360 || dist(p, driveStop) < 440 || r==='gap'){
+            target = lerp(p, driveStop, pd.d < 240 ? 0.62 : 0.48);
+            role = 'HELP';
+            helpTargets.push({player:p, target});
+          }else{
+            const rot = lerp(paintAnchor(p,cm), {x:splitLineX(p,cm), y:paintAnchor(p,cm).y}, 0.45);
+            target = lerp(p, rot, 0.42);
+            role = 'ROT';
+          }
+        }
+      }
+
+      target = roleOffset(target, p, idx, cm);
+      return {p, idx, role, x:target.x, y:target.y};
+    });
+
+    // ヘルプに複数人が固まりすぎないよう、自動で少しローテーション分散
+    raw.forEach((d,i)=>{
+      for(let j=0;j<i;j++){
+        const other = raw[j];
+        const dd = Math.hypot(d.x-other.x, d.y-other.y);
+        if(dd < 46){
+          const n=norm(d.x-other.x || 1, d.y-other.y || 1);
+          d.x += n.x*(46-dd)*0.65;
+          d.y += n.y*(46-dd)*0.65;
+        }
+      }
+    });
+
+    return raw.map(d=>{
+      const obj = X('X'+d.p.id, clamp(d.x, 18, b.w-18), clamp(d.y, 18, b.h-18));
+      obj.ai = 'help-defense-v19';
+      obj.role = d.role;
+      return obj;
+    });
+  }
+
+  window.computeDefenseObjectsV130 = computeDefenseObjectsV130 = function(sourceObjects, courtMode){
+    return enhancedDefense(sourceObjects, courtMode || mode);
+  };
+
+  // DFの役割を小さく見える化（邪魔にならない薄いラベル）
+  const prevDrawObjV190 = drawObj;
+  window.drawObj = drawObj = function(o){
+    prevDrawObjV190(o);
+    if(o && o.t==='d' && o.role){
+      ctx.save();
+      ctx.font='900 8px system-ui';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(255,255,255,.92)';
+      ctx.strokeStyle='rgba(0,0,0,.55)';
+      ctx.lineWidth=3;
+      const txt = o.role === 'BALL' ? 'ON' : o.role;
+      ctx.strokeText(txt, o.x, o.y+22);
+      ctx.fillText(txt, o.x, o.y+22);
+      ctx.restore();
+    }
+  };
+
+  const oldSyncDefenseBtnV190 = syncDefenseBtn;
+  syncDefenseBtn = function(){
+    oldSyncDefenseBtnV190 && oldSyncDefenseBtnV190();
+    const btn=$('defenseFloatBtn');
+    if(btn){ btn.title = defenseVisible ? 'ヘルプDF表示中' : 'ヘルプDF表示'; }
+  };
+
+  if(typeof setExportStatusV120 === 'function'){
+    setTimeout(()=>setExportStatusV120('v19.0：ヘルプDF強化。ギャップ・スプリットライン・ドライブヘルプ・ローテーションに対応。'),700);
+  }
+  render();
+})();
+
+/* v20.0 Defense AI Pro
+   - 役割ごとの色分け（マン / ギャップ / ヘルプ / ローテ / リム）
+   - 役割ごとのON/OFF
+   - AI連動 / ラベル表示 / 色表示
+   - レベル切替（初心者〜プロ）
+   - 他の保存・再生・共有・作成機能は変更なし
+*/
+(function(){
+  const KEY='tacticsBoardDefenseAIProV200';
+  const ROLE_META={
+    MAN:{label:'マン', color:'#ef4444', short:'マン'},
+    GAP:{label:'ギャップ', color:'#facc15', short:'ギャップ'},
+    HELP:{label:'ヘルプ', color:'#38bdf8', short:'ヘルプ'},
+    ROT:{label:'ローテ', color:'#22c55e', short:'ローテ'},
+    RIM:{label:'リム', color:'#a855f7', short:'リム'}
+  };
+  const LEVELS={
+    beginner:{label:'初級', power:.30, gap:.31, help:.36, rot:.32},
+    middle:{label:'中学', power:.44, gap:.40, help:.50, rot:.42},
+    high:{label:'高校', power:.56, gap:.48, help:.62, rot:.52},
+    college:{label:'大学', power:.68, gap:.56, help:.74, rot:.62},
+    pro:{label:'プロ', power:.80, gap:.64, help:.84, rot:.72}
+  };
+  let settings = load();
+  let panel = null;
+
+  function load(){
+    try{
+      return Object.assign(defaultSettings(), JSON.parse(localStorage.getItem(KEY)||'{}'));
+    }catch(e){ return defaultSettings(); }
+  }
+  function defaultSettings(){
+    return {roles:{MAN:true,GAP:true,HELP:true,ROT:true,RIM:true}, ai:true, labels:true, colors:true, level:'middle'};
+  }
+  function save(){ localStorage.setItem(KEY, JSON.stringify(settings)); }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function dist(a,b){ return Math.hypot((a.x||0)-(b.x||0),(a.y||0)-(b.y||0)); }
+  function lerp(a,b,t){ return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t}; }
+  function norm(dx,dy){ const l=Math.hypot(dx,dy)||1; return {x:dx/l,y:dy/l}; }
+  function bounds(cm){ return cm==='half' ? {w:750,h:700} : {w:1400,h:750}; }
+  function hoopForPoint(p,cm){
+    if(cm==='half') return {x:375,y:78};
+    return (p.x < 700) ? {x:78,y:375} : {x:1322,y:375};
+  }
+  function paintAnchor(p,cm){
+    if(cm==='half') return {x:375,y:212};
+    return (p.x < 700) ? {x:205,y:375} : {x:1195,y:375};
+  }
+  function splitLineX(p,cm){ return cm==='half' ? 375 : (p.x < 700 ? 350 : 1050); }
+  function pointLineDistance(p,a,b){
+    const vx=b.x-a.x, vy=b.y-a.y, wx=p.x-a.x, wy=p.y-a.y;
+    const len2=vx*vx+vy*vy || 1;
+    const t=clamp((wx*vx+wy*vy)/len2,0,1);
+    const q={x:a.x+vx*t,y:a.y+vy*t};
+    return {d:dist(p,q), q, t};
+  }
+  function laneScore(player, ball, hoop){
+    if(!ball) return 9999;
+    const lane = pointLineDistance(player, ball, hoop);
+    return dist(player,ball) + lane.d*.72;
+  }
+  function lastDriveFor(owner){
+    if(!owner) return null;
+    const ls=(lines||[]).filter(l=>l && !l.hidden);
+    return [...ls].reverse().find(l=>l.k==='drive' && l.moveRef && String(l.moveRef.id)===String(owner.id)) || null;
+  }
+  function roleOffset(base, player, idx, cm){
+    const hp=hoopForPoint(player,cm), n=norm(hp.x-player.x,hp.y-player.y);
+    const side=(Number(player.id||idx+1)%2===0) ? 1 : -1;
+    const mag=12+(idx%3)*5;
+    return {x:base.x + (-n.y*mag*side), y:base.y + (n.x*mag*side)};
+  }
+  function currentPower(){ return LEVELS[settings.level] || LEVELS.middle; }
+  function enabled(role){ return !!(settings.roles||{})[role]; }
+
+  function computeDefenseAIPro(sourceObjects, cm){
+    const src=(sourceObjects||[]).filter(o=>o && o.t!=='d');
+    const ball=src.find(o=>o.t==='b');
+    const players=src.filter(o=>o.t==='o');
+    if(!players.length) return [];
+    const b=bounds(cm), level=currentPower();
+    const ballOwner=ball ? players.slice().sort((a,bb)=>dist(a,ball)-dist(bb,ball))[0] : players[0];
+    const mainHoop=hoopForPoint(ballOwner||players[0], cm);
+    const driveLine=lastDriveFor(ballOwner);
+    const ballNearOwner=ball && ballOwner && dist(ball, ballOwner)<95;
+    const inAttackArea=ballOwner && dist(ballOwner, mainHoop)<(cm==='half'?420:540);
+    const driving=!!driveLine || (ballNearOwner && inAttackArea);
+    const driveStop=driveLine ? lerp({x:driveLine.x2,y:driveLine.y2}, mainHoop, .16) : (ballOwner ? lerp(ballOwner, mainHoop, .42) : mainHoop);
+
+    let off = players.filter(p=>!ballOwner || String(p.id)!==String(ballOwner.id));
+    let helpCandidate=null, rotCandidate=null, rimCandidate=null;
+    if(off.length){
+      const scored=off.map(p=>({p, lane:laneScore(p,ball,mainHoop), dBall:ball?dist(p,ball):999, dPaint:dist(p,paintAnchor(p,cm)), dStop:dist(p,driveStop)}));
+      helpCandidate = scored.slice().sort((a,b)=>(a.dStop+a.lane*.42)-(b.dStop+b.lane*.42))[0]?.p || null;
+      rotCandidate = scored.filter(x=>!helpCandidate || String(x.p.id)!==String(helpCandidate.id)).sort((a,b)=>a.lane-b.lane)[0]?.p || null;
+      rimCandidate = scored.slice().sort((a,b)=>a.dPaint-b.dPaint || b.dBall-a.dBall)[0]?.p || null;
+    }
+
+    let raw=players.map((p,idx)=>{
+      const hoop=hoopForPoint(p,cm), paint=paintAnchor(p,cm), idNum=Number(p.id||idx+1);
+      let role='HELP', target;
+
+      if(!settings.ai){
+        role='MAN';
+        target=lerp(p,hoop,.22);
+      }else if(ballOwner && String(p.id)===String(ballOwner.id)){
+        role='MAN';
+        const pressure=dist(p,hoop)<260 ? .16+level.power*.04 : .20+level.power*.03;
+        target=ball ? lerp(ball,hoop,pressure) : lerp(p,hoop,pressure);
+        const n=norm(hoop.x-p.x, hoop.y-p.y);
+        const middleDir = p.x < splitLineX(p,cm) ? 1 : -1;
+        target.x += middleDir * (10 + level.power*10);
+        target.y += n.x * (idNum%2===0?4:-4);
+      }else if(driving && helpCandidate && String(p.id)===String(helpCandidate.id)){
+        role='HELP';
+        target=lerp(p, driveStop, level.help);
+      }else if(driving && rotCandidate && String(p.id)===String(rotCandidate.id)){
+        role='ROT';
+        const rot={x:splitLineX(p,cm), y:paint.y};
+        target=lerp(p, rot, level.rot);
+      }else if(rimCandidate && String(p.id)===String(rimCandidate.id) && (!driving || dist(p,paint)<360)){
+        role='RIM';
+        target=lerp(p, paint, .58 + level.power*.18);
+      }else{
+        const lScore=laneScore(p, ball, mainHoop);
+        const dBall=ball ? dist(p,ball) : 999;
+        if(dBall < 285 || lScore < 395){
+          role='GAP';
+          const between=ball ? lerp(p,ball,level.gap) : lerp(p,hoop,.25);
+          target=lerp(between,hoop,.12 + level.power*.08);
+        }else{
+          role='HELP';
+          const sx=splitLineX(p,cm);
+          const splitPoint={x:sx, y:cm==='half'?clamp(p.y,150,520):clamp(p.y,165,585)};
+          target=lerp(lerp(paint,splitPoint,.58),p,.18 - level.power*.06);
+        }
+      }
+
+      target=roleOffset(target,p,idx,cm);
+      return {p,idx,role,x:target.x,y:target.y};
+    });
+
+    raw.forEach((d,i)=>{
+      for(let j=0;j<i;j++){
+        const other=raw[j];
+        const dd=Math.hypot(d.x-other.x,d.y-other.y);
+        if(dd<48){
+          const n=norm(d.x-other.x || 1, d.y-other.y || 1);
+          d.x += n.x*(48-dd)*.66;
+          d.y += n.y*(48-dd)*.66;
+        }
+      }
+    });
+
+    return raw.filter(d=>enabled(d.role)).map(d=>{
+      const obj=X('X'+d.p.id, clamp(d.x,18,b.w-18), clamp(d.y,18,b.h-18));
+      obj.ai='defense-ai-pro-v20';
+      obj.role=d.role;
+      obj.roleLabel=ROLE_META[d.role]?.label || d.role;
+      obj.roleColor=ROLE_META[d.role]?.color || '#2468e8';
+      return obj;
+    });
+  }
+
+  window.computeDefenseObjectsV130 = computeDefenseObjectsV130 = function(sourceObjects, courtMode){
+    return computeDefenseAIPro(sourceObjects, courtMode || mode);
+  };
+
+  // 役割カラーでDFを描画。OF/ボールは既存の描画を維持。
+  const prevDrawObjV200 = drawObj;
+  window.drawObj = drawObj = function(o){
+    if(!o || o.t!=='d') return prevDrawObjV200(o);
+    const r=21;
+    const fill = settings.colors && o.roleColor ? o.roleColor : '#2468e8';
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.30)';
+    ctx.shadowBlur=7;
+    ctx.beginPath();
+    ctx.arc(o.x,o.y,r,0,Math.PI*2);
+    ctx.fillStyle=fill;
+    ctx.strokeStyle='rgba(255,255,255,.95)';
+    ctx.lineWidth=3;
+    ctx.fill(); ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.fillStyle=(o.role==='GAP'||o.role==='MAN') ? '#111' : '#fff';
+    ctx.font='900 14px system-ui';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(o.id.replace('X','X'),o.x,o.y);
+    if(settings.labels && o.role){
+      const label=ROLE_META[o.role]?.short || o.role;
+      ctx.font='900 9px system-ui';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      const w=Math.max(26, ctx.measureText(label).width+10);
+      const x=o.x-w/2, y=o.y+22;
+      ctx.fillStyle='rgba(3,7,13,.74)';
+      roundRect(ctx,x,y,w,15,7); ctx.fill();
+      ctx.fillStyle='#fff';
+      ctx.fillText(label,o.x,y+7.5);
+    }
+    ctx.restore();
+  };
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+  }
+
+  function createPanel(){
+    if(panel) return panel;
+    const area=$('courtArea') || document.body;
+    panel=document.createElement('div');
+    panel.id='defensePanelV200';
+    panel.className='defense-panel-v200';
+    panel.innerHTML=`
+      <div class="defense-panel-head-v200">
+        <div class="defense-panel-title-v200">🛡 Defense AI Pro</div>
+        <button type="button" class="defense-close-v200" id="defenseCloseV200">×</button>
+      </div>
+      <button type="button" id="defenseMainToggleV200" class="defense-main-toggle-v200">DF表示</button>
+      <div class="defense-role-grid-v200" id="defenseRoleGridV200"></div>
+      <div class="defense-options-v200">
+        <button type="button" id="defenseAiToggleV200" class="defense-option-v200">AI連動</button>
+        <button type="button" id="defenseLabelToggleV200" class="defense-option-v200">ラベル</button>
+        <button type="button" id="defenseColorToggleV200" class="defense-option-v200">色表示</button>
+        <button type="button" id="defenseHidePanelV200" class="defense-option-v200">閉じる</button>
+      </div>
+      <div class="defense-level-v200" id="defenseLevelV200"></div>
+      <div class="defense-all-row-v200">
+        <button type="button" id="defenseAllOnV200">すべてON</button>
+        <button type="button" id="defenseAllOffV200">すべてOFF</button>
+      </div>
+      <div class="defense-mini-help-v200">マン/ギャップ/ヘルプ/ローテ/リムを個別に表示できます。レベルで寄り方が変わります。</div>
+    `;
+    area.appendChild(panel);
+
+    const grid=panel.querySelector('#defenseRoleGridV200');
+    Object.keys(ROLE_META).forEach(role=>{
+      const b=document.createElement('button');
+      b.type='button'; b.className='defense-role-btn-v200'; b.dataset.role=role;
+      b.innerHTML=`<span class="defense-dot-v200" style="background:${ROLE_META[role].color}"></span>${ROLE_META[role].label}`;
+      b.onclick=()=>{ settings.roles[role]=!settings.roles[role]; save(); renderPanel(); render(); };
+      grid.appendChild(b);
+    });
+    const lv=panel.querySelector('#defenseLevelV200');
+    Object.keys(LEVELS).forEach(k=>{
+      const b=document.createElement('button'); b.type='button'; b.dataset.level=k; b.textContent=LEVELS[k].label;
+      b.onclick=()=>{ settings.level=k; save(); renderPanel(); render(); };
+      lv.appendChild(b);
+    });
+    panel.querySelector('#defenseCloseV200').onclick=()=>panel.classList.remove('show');
+    panel.querySelector('#defenseHidePanelV200').onclick=()=>panel.classList.remove('show');
+    panel.querySelector('#defenseMainToggleV200').onclick=()=>{ defenseVisible=!defenseVisible; stripDefenseFromLiveObjectsV130?.(); syncDefenseBtn(); renderPanel(); render(); };
+    panel.querySelector('#defenseAiToggleV200').onclick=()=>{ settings.ai=!settings.ai; save(); renderPanel(); render(); };
+    panel.querySelector('#defenseLabelToggleV200').onclick=()=>{ settings.labels=!settings.labels; save(); renderPanel(); render(); };
+    panel.querySelector('#defenseColorToggleV200').onclick=()=>{ settings.colors=!settings.colors; save(); renderPanel(); render(); };
+    panel.querySelector('#defenseAllOnV200').onclick=()=>{ Object.keys(ROLE_META).forEach(r=>settings.roles[r]=true); defenseVisible=true; save(); syncDefenseBtn(); renderPanel(); render(); };
+    panel.querySelector('#defenseAllOffV200').onclick=()=>{ Object.keys(ROLE_META).forEach(r=>settings.roles[r]=false); save(); renderPanel(); render(); };
+    renderPanel();
+    return panel;
+  }
+  function renderPanel(){
+    if(!panel) return;
+    const main=panel.querySelector('#defenseMainToggleV200');
+    main.classList.toggle('on', defenseVisible);
+    main.textContent=defenseVisible ? 'DF表示：ON' : 'DF表示：OFF';
+    panel.querySelectorAll('.defense-role-btn-v200').forEach(b=>b.classList.toggle('off', !enabled(b.dataset.role)));
+    panel.querySelector('#defenseAiToggleV200').classList.toggle('on', settings.ai);
+    panel.querySelector('#defenseAiToggleV200').textContent=settings.ai?'AI連動 ON':'AI連動 OFF';
+    panel.querySelector('#defenseLabelToggleV200').classList.toggle('on', settings.labels);
+    panel.querySelector('#defenseLabelToggleV200').textContent=settings.labels?'ラベル ON':'ラベル OFF';
+    panel.querySelector('#defenseColorToggleV200').classList.toggle('on', settings.colors);
+    panel.querySelector('#defenseColorToggleV200').textContent=settings.colors?'色表示 ON':'色表示 OFF';
+    panel.querySelectorAll('[data-level]').forEach(b=>b.classList.toggle('active', b.dataset.level===settings.level));
+  }
+
+  const oldSyncDefenseBtnV200 = syncDefenseBtn;
+  syncDefenseBtn = function(){
+    oldSyncDefenseBtnV200 && oldSyncDefenseBtnV200();
+    const btn=$('defenseFloatBtn');
+    if(btn){
+      btn.textContent = defenseVisible ? 'D✓' : 'D';
+      btn.title = defenseVisible ? 'Defense AI Pro 表示中' : 'Defense AI Pro';
+    }
+    renderPanel();
+  };
+
+  setTimeout(()=>{
+    createPanel();
+    const d=$('defenseFloatBtn');
+    if(d){
+      d.onclick=(e)=>{
+        e.preventDefault();
+        createPanel();
+        if(!defenseVisible){ defenseVisible=true; stripDefenseFromLiveObjectsV130?.(); syncDefenseBtn(); render(); }
+        panel.classList.toggle('show');
+        renderPanel();
+      };
+    }
+    syncDefenseBtn();
+    if(typeof setExportStatusV120 === 'function'){
+      setExportStatusV120('v20.0：Defense AI Pro。マン/ギャップ/ヘルプ/ローテ/リムを色分け・個別ON/OFFできます。');
+    }
+    render();
+  },1000);
+})();
+
+/* v20.1 Defense Follow 修正
+   - DFが瞬間移動して見えにくい問題を改善
+   - 基本は「1選手に1DF」が追尾する方式
+   - ローテーションは別指導用なのでデフォルトでは使わない
+   - 役割色分け・個別ON/OFF・ラベル・レベル機能は維持
+*/
+(function(){
+  const KEY='tacticsBoardDefenseAIProV200';
+  const ROLE_META_V201={
+    MAN:{label:'マン', color:'#ef4444', short:'マン'},
+    GAP:{label:'ギャップ', color:'#facc15', short:'ギャップ'},
+    HELP:{label:'ヘルプ', color:'#38bdf8', short:'ヘルプ'},
+    ROT:{label:'ローテ', color:'#22c55e', short:'ローテ'},
+    RIM:{label:'リム', color:'#a855f7', short:'リム'}
+  };
+  const LEVELS_V201={
+    beginner:{label:'初級', man:.16, gap:.22, help:.28, rim:.32, max:70},
+    middle:{label:'中学', man:.20, gap:.28, help:.36, rim:.40, max:92},
+    high:{label:'高校', man:.24, gap:.34, help:.44, rim:.48, max:110},
+    college:{label:'大学', man:.28, gap:.40, help:.52, rim:.56, max:128},
+    pro:{label:'プロ', man:.32, gap:.46, help:.60, rim:.64, max:146}
+  };
+
+  function loadSettings(){
+    try{
+      const d={roles:{MAN:true,GAP:true,HELP:true,ROT:false,RIM:true}, ai:true, labels:true, colors:true, level:'middle'};
+      const s=JSON.parse(localStorage.getItem(KEY)||'{}');
+      const out=Object.assign(d,s||{});
+      out.roles=Object.assign(d.roles,(s&&s.roles)||{});
+      // ローテーションは別指導用なので、初回/更新時は基本OFFに寄せる
+      if(localStorage.getItem('tacticsBoardDefenseFollowV201')!=='seen'){
+        out.roles.ROT=false;
+        localStorage.setItem('tacticsBoardDefenseFollowV201','seen');
+        localStorage.setItem(KEY,JSON.stringify(out));
+      }
+      return out;
+    }catch(e){ return {roles:{MAN:true,GAP:true,HELP:true,ROT:false,RIM:true}, ai:true, labels:true, colors:true, level:'middle'}; }
+  }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function dist(a,b){ return Math.hypot((a.x||0)-(b.x||0),(a.y||0)-(b.y||0)); }
+  function lerp(a,b,t){ return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t}; }
+  function bounds(cm){ return cm==='half' ? {w:750,h:700} : {w:1400,h:750}; }
+  function hoopFor(p,cm){ return cm==='half' ? {x:375,y:78} : (p.x<700 ? {x:78,y:375} : {x:1322,y:375}); }
+  function paintFor(p,cm){ return cm==='half' ? {x:375,y:214} : (p.x<700 ? {x:205,y:375} : {x:1195,y:375}); }
+  function splitX(p,cm){ return cm==='half' ? 375 : (p.x<700 ? 350 : 1050); }
+  function pointLineDistance(p,a,b){
+    const vx=b.x-a.x, vy=b.y-a.y, wx=p.x-a.x, wy=p.y-a.y;
+    const len2=vx*vx+vy*vy || 1;
+    const t=clamp((wx*vx+wy*vy)/len2,0,1);
+    const q={x:a.x+vx*t,y:a.y+vy*t};
+    return {d:dist(p,q),q,t};
+  }
+  function capFromPlayer(player,target,maxDist){
+    const dx=target.x-player.x, dy=target.y-player.y;
+    const d=Math.hypot(dx,dy)||1;
+    if(d<=maxDist) return target;
+    return {x:player.x+dx/d*maxDist, y:player.y+dy/d*maxDist};
+  }
+  function roleForPlayer(p, idx, ball, ballOwner, hoop, cm){
+    if(ballOwner && String(p.id)===String(ballOwner.id)) return 'MAN';
+    if(!ball) return 'HELP';
+    const dBall=dist(p,ball);
+    const lane=pointLineDistance(p,ball,hoop).d;
+    const paint=paintFor(p,cm);
+    const dPaint=dist(p,paint);
+    if(dPaint<155 && dBall>240) return 'RIM';
+    if(dBall<300 || lane<175) return 'GAP';
+    return 'HELP';
+  }
+  function targetForRole(p, role, idx, ball, ballOwner, cm, level){
+    const hoop=hoopFor(ballOwner || p, cm);
+    const ownHoop=hoopFor(p, cm);
+    const paint=paintFor(p,cm);
+    let target;
+    if(role==='MAN'){
+      const base = ball ? lerp(ball, ownHoop, level.man) : lerp(p, ownHoop, .20);
+      // 少しだけミドル側を切るが、必ず自分のマーク周辺に収める
+      const middle = p.x < splitX(p,cm) ? 1 : -1;
+      target={x:base.x+middle*12, y:base.y};
+    }else if(role==='GAP'){
+      const between = ball ? lerp(p, ball, level.gap) : lerp(p, ownHoop, .24);
+      target = lerp(between, ownHoop, .10);
+    }else if(role==='RIM'){
+      target = lerp(p, paint, level.rim);
+    }else if(role==='ROT'){
+      // ローテーションは別指導用。ONにした時だけ、少しだけペイント側へ寄せて表示する。
+      target = lerp(p, {x:splitX(p,cm), y:paint.y}, .34);
+    }else{
+      const splitPoint={x:splitX(p,cm), y:cm==='half'?clamp(p.y,150,520):clamp(p.y,165,585)};
+      target=lerp(p, lerp(paint,splitPoint,.54), level.help);
+    }
+    return capFromPlayer(p,target,level.max);
+  }
+  function enabled(role, settings){ return !!(settings.roles||{})[role]; }
+  function computeFollowDefense(sourceObjects, cm){
+    const settings=loadSettings();
+    const level=LEVELS_V201[settings.level] || LEVELS_V201.middle;
+    const src=(sourceObjects||[]).filter(o=>o && o.t!=='d');
+    const ball=src.find(o=>o.t==='b');
+    const players=src.filter(o=>o.t==='o');
+    if(!players.length) return [];
+    const ballOwner = ball ? players.slice().sort((a,b)=>dist(a,ball)-dist(b,ball))[0] : players[0];
+    const hoop=hoopFor(ballOwner||players[0], cm);
+    const b=bounds(cm);
+
+    return players.map((p,idx)=>{
+      let role = settings.ai ? roleForPlayer(p,idx,ball,ballOwner,hoop,cm) : 'MAN';
+      // ROTは基本では割り当てない。ユーザーがROTだけONにしている時も1対1追尾の範囲内で表示。
+      if(role==='ROT' && !enabled('ROT',settings)) role='HELP';
+      if(!enabled(role,settings)) return null;
+      const t=targetForRole(p,role,idx,ball,ballOwner,cm,level);
+      const obj=X('X'+p.id, clamp(t.x,18,b.w-18), clamp(t.y,18,b.h-18));
+      obj.ai='defense-follow-v20-1';
+      obj.role=role;
+      obj.roleLabel=ROLE_META_V201[role]?.label || role;
+      obj.roleColor=ROLE_META_V201[role]?.color || '#2468e8';
+      return obj;
+    }).filter(Boolean);
+  }
+
+  window.computeDefenseObjectsV130 = computeDefenseObjectsV130 = function(sourceObjects, courtMode){
+    return computeFollowDefense(sourceObjects, courtMode || mode);
+  };
+
+  // パネル説明だけ更新
+  setTimeout(()=>{
+    const help=document.querySelector('.defense-mini-help-v200');
+    if(help) help.textContent='v20.1：基本は1選手に1DFが追尾。マン/ギャップ/ヘルプ/リムを色分け。ローテは別指導用で必要な時だけON。';
+    const rot=document.querySelector('[data-role="ROT"]');
+    if(rot) rot.title='ローテーションは別指導用。通常はOFF推奨。';
+    if(typeof setExportStatusV120==='function') setExportStatusV120('v20.1：DFは基本1対1で自分のOFを追尾。瞬間移動を抑え、ローテは別指導用にしました。');
+    if(typeof render==='function') render();
+  },1200);
+})();
+
+
+/* v20.2 Drive Help Only
+   - ヘルプはドライブ線が発生している時だけ表示
+   - 通常時はボールマン以外はギャップを基本表示
+   - 基本は1選手に1DFで自分のOFを追尾
+   - ローテーションは別指導用で通常OFF推奨のまま
+*/
+(function(){
+  const KEY='tacticsBoardDefenseAIProV200';
+  const ROLE_META_V202={
+    MAN:{label:'マン', color:'#ef4444', short:'マン'},
+    GAP:{label:'ギャップ', color:'#facc15', short:'ギャップ'},
+    HELP:{label:'ヘルプ', color:'#38bdf8', short:'ヘルプ'},
+    ROT:{label:'ローテ', color:'#22c55e', short:'ローテ'},
+    RIM:{label:'リム', color:'#a855f7', short:'リム'}
+  };
+  const LEVELS_V202={
+    beginner:{label:'初級', man:.16, gap:.18, help:.32, rim:.28, max:68},
+    middle:{label:'中学', man:.20, gap:.22, help:.42, rim:.34, max:86},
+    high:{label:'高校', man:.24, gap:.26, help:.50, rim:.40, max:104},
+    college:{label:'大学', man:.28, gap:.30, help:.58, rim:.46, max:122},
+    pro:{label:'プロ', man:.32, gap:.34, help:.66, rim:.52, max:140}
+  };
+  function loadSettings(){
+    try{
+      const d={roles:{MAN:true,GAP:true,HELP:true,ROT:false,RIM:true}, ai:true, labels:true, colors:true, level:'middle'};
+      const s=JSON.parse(localStorage.getItem(KEY)||'{}');
+      const out=Object.assign(d,s||{});
+      out.roles=Object.assign(d.roles,(s&&s.roles)||{});
+      return out;
+    }catch(e){
+      return {roles:{MAN:true,GAP:true,HELP:true,ROT:false,RIM:true}, ai:true, labels:true, colors:true, level:'middle'};
+    }
+  }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function dist(a,b){ return Math.hypot((a.x||0)-(b.x||0),(a.y||0)-(b.y||0)); }
+  function lerp(a,b,t){ return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t}; }
+  function bounds(cm){ return cm==='half' ? {w:750,h:700} : {w:1400,h:750}; }
+  function hoopFor(p,cm){ return cm==='half' ? {x:375,y:78} : (p.x<700 ? {x:78,y:375} : {x:1322,y:375}); }
+  function paintFor(p,cm){ return cm==='half' ? {x:375,y:214} : (p.x<700 ? {x:205,y:375} : {x:1195,y:375}); }
+  function splitX(p,cm){ return cm==='half' ? 375 : (p.x<700 ? 350 : 1050); }
+  function pointLineDistance(p,a,b){
+    const vx=b.x-a.x, vy=b.y-a.y, wx=p.x-a.x, wy=p.y-a.y;
+    const len2=vx*vx+vy*vy || 1;
+    const t=clamp((wx*vx+wy*vy)/len2,0,1);
+    const q={x:a.x+vx*t,y:a.y+vy*t};
+    return {d:dist(p,q), q, t};
+  }
+  function capFromPlayer(player,target,maxDist){
+    const dx=target.x-player.x, dy=target.y-player.y;
+    const d=Math.hypot(dx,dy)||1;
+    if(d<=maxDist) return target;
+    return {x:player.x+dx/d*maxDist, y:player.y+dy/d*maxDist};
+  }
+  function enabled(role, settings){ return !!(settings.roles||{})[role]; }
+
+  function getActiveDriveInfo(src, players){
+    const allLines = (typeof lines !== 'undefined' && Array.isArray(lines)) ? lines : [];
+    const drives = allLines.filter(l=>l && l.k==='drive');
+    if(!drives.length) return null;
+    // 画面に出ている最後のドライブを「今起きているドライブ」と扱う
+    const d = drives[drives.length-1];
+    const driverId = d.moveRef && d.moveRef.id ? String(d.moveRef.id) : null;
+    const driver = driverId ? players.find(p=>String(p.id)===driverId) : null;
+    const start = {x:d.x1, y:d.y1};
+    const end = {x:d.x2, y:d.y2};
+    return {line:d, driverId, driver, start, end};
+  }
+
+  function pickHelpPlayer(players, ballOwner, drive){
+    if(!drive) return null;
+    const driverId = drive.driverId || (ballOwner ? String(ballOwner.id) : null);
+    const candidates = players.filter(p=>String(p.id)!==String(driverId));
+    if(!candidates.length) return null;
+    // ドライブ到達点・ドライブレーンに一番近い選手だけヘルプに出す
+    return candidates.slice().sort((a,b)=>{
+      const da = pointLineDistance(a, drive.start, drive.end).d * .65 + dist(a, drive.end) * .35;
+      const db = pointLineDistance(b, drive.start, drive.end).d * .65 + dist(b, drive.end) * .35;
+      return da-db;
+    })[0];
+  }
+
+  function roleForPlayerV202(p, idx, ball, ballOwner, cm, drive, helpPlayer){
+    if(ballOwner && String(p.id)===String(ballOwner.id)) return 'MAN';
+    // ドライブ時だけ、最も近い1人をヘルプにする
+    if(drive && helpPlayer && String(p.id)===String(helpPlayer.id)) return 'HELP';
+    // ローテは別指導用なのでAIからは基本割り当てない
+    // リム役はペイントにかなり近く、かつボールから遠い時のみ。その他はギャップ。
+    const ballPoint = ball || (ballOwner || p);
+    const paint = paintFor(p,cm);
+    if(dist(p,paint)<120 && dist(p,ballPoint)>260) return 'RIM';
+    return 'GAP';
+  }
+
+  function targetForRoleV202(p, role, idx, ball, ballOwner, cm, level, drive){
+    const ownHoop=hoopFor(p, cm);
+    const ballPoint = ball || ballOwner || p;
+    const paint=paintFor(p,cm);
+    let target;
+    if(role==='MAN'){
+      const base = ball ? lerp(ball, ownHoop, level.man) : lerp(p, ownHoop, .18);
+      const middle = p.x < splitX(p,cm) ? 1 : -1;
+      target={x:base.x+middle*10, y:base.y};
+    }else if(role==='GAP'){
+      // 自分のマークを追いながら、少しだけボール・リング側へ寄る
+      const between = lerp(p, ballPoint, level.gap);
+      target = lerp(between, ownHoop, .08);
+    }else if(role==='HELP'){
+      // ドライブが来た時だけ、ドライブレーンへ2〜3歩だけ寄る
+      const helpTarget = drive ? lerp(drive.end, paint, .18) : lerp(ballPoint, paint, .50);
+      target = lerp(p, helpTarget, level.help);
+    }else if(role==='RIM'){
+      target = lerp(p, paint, level.rim);
+    }else if(role==='ROT'){
+      target = lerp(p, {x:splitX(p,cm), y:paint.y}, .30);
+    }else{
+      target = lerp(p, ownHoop, .20);
+    }
+    return capFromPlayer(p,target,level.max);
+  }
+
+  function computeDriveHelpDefense(sourceObjects, cm){
+    const settings=loadSettings();
+    const level=LEVELS_V202[settings.level] || LEVELS_V202.middle;
+    const src=(sourceObjects||[]).filter(o=>o && o.t!=='d');
+    const ball=src.find(o=>o.t==='b');
+    const players=src.filter(o=>o.t==='o');
+    if(!players.length) return [];
+    const ballOwner = ball ? players.slice().sort((a,b)=>dist(a,ball)-dist(b,ball))[0] : players[0];
+    const drive = getActiveDriveInfo(src, players);
+    const helpPlayer = drive ? pickHelpPlayer(players, ballOwner, drive) : null;
+    const b=bounds(cm);
+    return players.map((p,idx)=>{
+      let role = settings.ai ? roleForPlayerV202(p,idx,ball,ballOwner,cm,drive,helpPlayer) : 'MAN';
+      if(role==='ROT' && !enabled('ROT',settings)) role='GAP';
+      // ヘルプOFFなら、ドライブ時もギャップとして表示
+      if(role==='HELP' && !enabled('HELP',settings)) role='GAP';
+      if(!enabled(role,settings)) return null;
+      const t=targetForRoleV202(p,role,idx,ball,ballOwner,cm,level,drive);
+      const obj=X('X'+p.id, clamp(t.x,18,b.w-18), clamp(t.y,18,b.h-18));
+      obj.ai='defense-drive-help-v20-2';
+      obj.role=role;
+      obj.roleLabel=ROLE_META_V202[role]?.label || role;
+      obj.roleColor=ROLE_META_V202[role]?.color || '#2468e8';
+      return obj;
+    }).filter(Boolean);
+  }
+
+  window.computeDefenseObjectsV130 = computeDefenseObjectsV130 = function(sourceObjects, courtMode){
+    return computeDriveHelpDefense(sourceObjects, courtMode || mode);
+  };
+
+  setTimeout(()=>{
+    const help=document.querySelector('.defense-mini-help-v200');
+    if(help) help.textContent='v20.2：通常はマン＋ギャップ。ヘルプはドライブが来た時だけ発生します。基本は1選手に1DFで追尾します。';
+    if(typeof setExportStatusV120==='function') setExportStatusV120('v20.2：ヘルプはドライブ時だけ。通常はギャップで1対1追尾するDFロジックへ修正しました。');
+    if(typeof render==='function') render();
+  },1200);
+})();

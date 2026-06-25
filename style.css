@@ -2145,3 +2145,40 @@ button{
     font-size:17px !important;
   }
 }
+
+/* v20.0 Defense AI Pro */
+.defense-panel-v200{
+  position:absolute;
+  right:14px;
+  bottom:70px;
+  z-index:90;
+  width:268px;
+  max-width:calc(100vw - 28px);
+  background:linear-gradient(180deg,rgba(10,18,30,.96),rgba(6,12,22,.96));
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:18px;
+  box-shadow:0 18px 42px rgba(0,0,0,.45);
+  backdrop-filter:blur(12px);
+  padding:12px;
+  display:none;
+}
+.defense-panel-v200.show{display:block;}
+.defense-panel-head-v200{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+.defense-panel-title-v200{font-weight:1000;font-size:14px;letter-spacing:.02em;color:#fff;}
+.defense-close-v200{width:28px;height:28px;min-width:28px;padding:0!important;border-radius:999px!important;background:rgba(255,255,255,.08)!important;border-color:rgba(255,255,255,.14)!important;font-size:14px!important;}
+.defense-main-toggle-v200{width:100%;height:40px;margin-bottom:10px;border-radius:12px!important;background:linear-gradient(180deg,#263347,#0d1624)!important;border-color:rgba(255,255,255,.18)!important;}
+.defense-main-toggle-v200.on{background:linear-gradient(180deg,#f4b43a,#d89116)!important;color:#10141a!important;border-color:#f4b43a!important;}
+.defense-role-grid-v200{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px;}
+.defense-role-btn-v200{height:38px;padding:0 8px!important;border-radius:12px!important;background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.13)!important;font-size:12px!important;display:flex;align-items:center;justify-content:center;gap:5px;}
+.defense-role-btn-v200.off{opacity:.38;filter:grayscale(.8);}
+.defense-dot-v200{width:9px;height:9px;border-radius:999px;display:inline-block;box-shadow:0 0 0 2px rgba(255,255,255,.12);}
+.defense-options-v200{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px;}
+.defense-option-v200{height:34px;padding:0 6px!important;border-radius:10px!important;background:rgba(255,255,255,.05)!important;border-color:rgba(255,255,255,.12)!important;font-size:11px!important;}
+.defense-option-v200.on{background:rgba(244,180,58,.20)!important;border-color:rgba(244,180,58,.55)!important;color:#ffd57a!important;}
+.defense-level-v200{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:10px;}
+.defense-level-v200 button{height:30px;padding:0!important;border-radius:999px!important;font-size:10px!important;background:rgba(255,255,255,.05)!important;border-color:rgba(255,255,255,.12)!important;}
+.defense-level-v200 button.active{background:#f4b43a!important;color:#111!important;border-color:#f4b43a!important;}
+.defense-all-row-v200{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.defense-all-row-v200 button{height:34px;padding:0 6px!important;font-size:11px!important;border-radius:10px!important;}
+.defense-mini-help-v200{margin:9px 1px 0;color:#aebcd1;font-size:10px;line-height:1.45;}
+@media(max-width:1000px){.defense-panel-v200{right:10px;bottom:62px;width:252px;}}
